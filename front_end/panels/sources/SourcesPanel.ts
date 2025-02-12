@@ -849,6 +849,37 @@ export class SourcesPanel extends UI.Panel.Panel implements
     return true;
   }
 
+  goToPrevLine(): boolean {
+    const debuggerModel = this.prepareToResume();
+    if (debuggerModel) {
+      const currentTarget = UI.Context.Context.instance().flavor(SDK.Target.Target);
+      const currentDebuggerModel = currentTarget ? currentTarget.model(SDK.DebuggerModel.DebuggerModel) : null;
+      const details = currentDebuggerModel ? currentDebuggerModel.debuggerPausedDetails() : null;
+
+      // details 가 있다는 것은, 일단 멈췄다는 것으로 추정
+      if (details) {
+        const topCallFrame = details.callFrames[0];
+        const { callFrameId } = topCallFrame.payload;
+        const { scriptId } = topCallFrame.script;
+        const { lineNumber } = topCallFrame.location();
+        // 이전 줄에 Breakpoint 줌
+        void  debuggerModel.agent.invoke_setBreakpoint({location: {
+          scriptId,
+          lineNumber: lineNumber - 1,
+        }});
+
+        void  debuggerModel.agent.invoke_restartFrame({
+          callFrameId,
+          mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
+        });
+
+        // this.pausedInternal
+      }
+    }
+
+    return true;
+  }
+
   private async continueToLocation(uiLocation: Workspace.UISourceCode.UILocation): Promise<void> {
     const executionContext = UI.Context.Context.instance().flavor(SDK.RuntimeModel.ExecutionContext);
     if (!executionContext) {
@@ -898,6 +929,12 @@ export class SourcesPanel extends UI.Panel.Panel implements
     debugToolbar.appendToolbarItem(UI.Toolbar.Toolbar.createActionButton(this.stepIntoAction));
     debugToolbar.appendToolbarItem(UI.Toolbar.Toolbar.createActionButton(this.stepOutAction));
     debugToolbar.appendToolbarItem(UI.Toolbar.Toolbar.createActionButton(this.stepAction));
+
+    const goToPrevLineButton = new UI.Toolbar.ToolbarButton('goToPrevLine');
+
+    goToPrevLineButton.addEventListener(UI.Toolbar.ToolbarButton.Events.CLICK, this.goToPrevLine, this);
+
+    debugToolbar.appendToolbarItem(goToPrevLineButton);
 
     debugToolbar.appendSeparator();
     debugToolbar.appendToolbarItem(UI.Toolbar.Toolbar.createActionButton(this.toggleBreakpointsActiveAction));
