@@ -849,35 +849,68 @@ export class SourcesPanel extends UI.Panel.Panel implements
     return true;
   }
 
-  goToPrevLine(): boolean {
+  async goToPrevLine(): Promise<boolean> {
     const debuggerModel = this.prepareToResume();
     if (debuggerModel) {
       const currentTarget = UI.Context.Context.instance().flavor(SDK.Target.Target);
       const currentDebuggerModel = currentTarget ? currentTarget.model(SDK.DebuggerModel.DebuggerModel) : null;
       const details = currentDebuggerModel ? currentDebuggerModel.debuggerPausedDetails() : null;
 
-      // details 가 있다는 것은, 일단 멈췄다는 것으로 추정
       if (details) {
         const topCallFrame = details.callFrames[0];
         const { callFrameId } = topCallFrame.payload;
         const { scriptId } = topCallFrame.script;
         const { lineNumber } = topCallFrame.location();
-        // 이전 줄에 Breakpoint 줌
-        void  debuggerModel.agent.invoke_setBreakpoint({location: {
+
+        const { breakpointId: breakpointId1 } = await debuggerModel.agent.invoke_setBreakpoint({location: {
           scriptId,
           lineNumber: lineNumber - 1,
         }});
 
-        void  debuggerModel.agent.invoke_restartFrame({
+        const { breakpointId: breakpointId2 } = await debuggerModel.agent.invoke_setBreakpoint({location: {
+          scriptId,
+          lineNumber: lineNumber - 2,
+        }});
+
+        await debuggerModel.agent.invoke_restartFrame({
           callFrameId,
           mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
         });
 
-        // this.pausedInternal
+        await debuggerModel.agent.invoke_resume({terminateOnResume: false});
+
+        for (
+          let pausedLine = this.getPausedLineAfterRestart();
+          pausedLine !== null && pausedLine < lineNumber - 2;
+          pausedLine = this.getPausedLineAfterRestart()
+        ){
+          await debuggerModel.agent.invoke_resume({terminateOnResume: false});
+        }
+
+        await debuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpointId1});
+        await debuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpointId2});
       }
     }
 
     return true;
+  }
+
+  getPausedLineAfterRestart(): number | null {
+    const target = UI.Context.Context.instance().flavor(SDK.Target.Target);
+
+    if (!target) {
+      return null;
+    }
+
+    const debuggerModel = target.model(SDK.DebuggerModel.DebuggerModel);
+
+    if (debuggerModel) {
+      const details = debuggerModel ? debuggerModel.debuggerPausedDetails() : null;
+
+      return (details) ? details.callFrames[0].location().lineNumber : null;
+    }
+
+    return null;
   }
 
   private async continueToLocation(uiLocation: Workspace.UISourceCode.UILocation): Promise<void> {
