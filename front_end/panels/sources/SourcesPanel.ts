@@ -963,7 +963,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
     debugToolbar.appendToolbarItem(UI.Toolbar.Toolbar.createActionButton(this.stepOutAction));
     debugToolbar.appendToolbarItem(UI.Toolbar.Toolbar.createActionButton(this.stepAction));
 
-    const goToPrevLineButton = new UI.Toolbar.ToolbarButton('goToPrevLine');
+    const goToPrevLineButton = new UI.Toolbar.ToolbarButton('goToPrevLine', 'go-to-prev-line');
 
     goToPrevLineButton.addEventListener(UI.Toolbar.ToolbarButton.Events.CLICK, this.goToPrevLine, this);
 

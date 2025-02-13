@@ -261,6 +261,7 @@ devtools_svg_sources = [
   "step-into.svg",
   "step-out.svg",
   "step-over.svg",
+  "go-to-prev-line.svg",
   "step.svg",
   "stop.svg",
   "symbol.svg",
