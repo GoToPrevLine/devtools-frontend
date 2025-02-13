@@ -886,16 +886,24 @@ export class SourcesPanel extends UI.Panel.Panel implements
             lineNumber: possibleBreakpointsInFuncScope[0].lineNumber,
             columnNumber: possibleBreakpointsInFuncScope[0].columnNumber
           };
+          let isFirstLine: boolean = false;
+          let isSecondLine: boolean = false;
 
           for (let i = 0 ; i < possibleBreakpointsInFuncScope.length ; i += 1) {
             const isCurrentIndex = (possibleBreakpointsInFuncScope[i].lineNumber === lineNumber) && (possibleBreakpointsInFuncScope[i].columnNumber === columnNumber);
-            if (isCurrentIndex && i !== 0) {
+            if (isCurrentIndex && i === 0) {
+              isFirstLine = true;
+              break;
+            }
+            if (isCurrentIndex && i === 1) {
+              isSecondLine = true;
+              break;
+            }
+            if (isCurrentIndex && i > 1) {
               possiblePrevBreakpoint = {
                 lineNumber: possibleBreakpointsInFuncScope[i - 1].lineNumber,
                 columnNumber: possibleBreakpointsInFuncScope[i - 1].columnNumber || 0
               };
-            }
-            if (isCurrentIndex && i !== 1) {
               beforePossiblePrevBreakpoint = {
                 lineNumber: possibleBreakpointsInFuncScope[i - 2].lineNumber,
                 columnNumber: possibleBreakpointsInFuncScope[i - 2].columnNumber || 0
@@ -903,10 +911,9 @@ export class SourcesPanel extends UI.Panel.Panel implements
             }
           }
 
-          if (possiblePrevBreakpoint.lineNumber > lineNumberOfFunction) {
+          if (!isFirstLine) {
             const {
               breakpointId: breakpointId1,
-              actualLocation: actualLocation1
             } = await debuggerModel.agent.invoke_setBreakpoint({location: {
               scriptId,
               ...possiblePrevBreakpoint
@@ -914,7 +921,6 @@ export class SourcesPanel extends UI.Panel.Panel implements
 
             const {
               breakpointId: breakpointId2,
-              actualLocation: actualLocation2
             } = await debuggerModel.agent.invoke_setBreakpoint({location: {
               scriptId,
               ...beforePossiblePrevBreakpoint
@@ -925,13 +931,9 @@ export class SourcesPanel extends UI.Panel.Panel implements
               mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
             });
 
-            if (
-              actualLocation1.columnNumber === actualLocation2.columnNumber &&
-              actualLocation1.lineNumber === actualLocation2.lineNumber
-            ) {
+            if (isSecondLine) {
               // 현재 await하면 resumed 되므로, 비동기 작동을 위해 await하지 않음
               void debuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpointId1});
-              void debuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpointId2});
 
               return true;
             }
@@ -948,9 +950,6 @@ export class SourcesPanel extends UI.Panel.Panel implements
 
             await debuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpointId1});
             await debuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpointId2});
-
-          } else {
-            // stepout
           }
         }
 
