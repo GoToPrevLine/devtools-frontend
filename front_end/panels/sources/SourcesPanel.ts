@@ -845,6 +845,8 @@ export class SourcesPanel extends UI.Panel.Panel implements
     const debuggerModel = this.prepareToResume();
     if (debuggerModel) {
       void debuggerModel.stepOut();
+      const details = debuggerModel.debuggerPausedDetails();
+      (details);
     }
     return true;
   }
@@ -862,12 +864,18 @@ export class SourcesPanel extends UI.Panel.Panel implements
         const { scriptId } = topCallFrame.script;
         const { lineNumber } = topCallFrame.location();
 
-        const { breakpointId: breakpointId1 } = await debuggerModel.agent.invoke_setBreakpoint({location: {
+        const {
+          breakpointId: breakpointId1,
+          actualLocation: actualLocation1
+        } = await debuggerModel.agent.invoke_setBreakpoint({location: {
           scriptId,
           lineNumber: lineNumber - 1,
         }});
 
-        const { breakpointId: breakpointId2 } = await debuggerModel.agent.invoke_setBreakpoint({location: {
+        const {
+          breakpointId: breakpointId2,
+          actualLocation: actualLocation2
+        } = await debuggerModel.agent.invoke_setBreakpoint({location: {
           scriptId,
           lineNumber: lineNumber - 2,
         }});
@@ -876,6 +884,17 @@ export class SourcesPanel extends UI.Panel.Panel implements
           callFrameId,
           mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
         });
+
+        if (
+          actualLocation1.columnNumber === actualLocation2.columnNumber &&
+          actualLocation1.lineNumber === actualLocation2.lineNumber
+        ) {
+          // 현재 await하면 resumed 되므로, 비동기 작동을 위해 await하지 않음
+          void debuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpointId1});
+          void debuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpointId2});
+
+          return true;
+        }
 
         await debuggerModel.agent.invoke_resume({terminateOnResume: false});
 
