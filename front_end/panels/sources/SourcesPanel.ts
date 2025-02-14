@@ -852,114 +852,161 @@ export class SourcesPanel extends UI.Panel.Panel implements
   }
 
   async goToPrevLine(): Promise<boolean> {
-    const debuggerModel = this.prepareToResume();
-    if (debuggerModel) {
-      const currentTarget = UI.Context.Context.instance().flavor(SDK.Target.Target);
-      const currentDebuggerModel = currentTarget ? currentTarget.model(SDK.DebuggerModel.DebuggerModel) : null;
-      const details = currentDebuggerModel ? currentDebuggerModel.debuggerPausedDetails() : null;
+    const currentTarget = UI.Context.Context.instance().flavor(SDK.Target.Target);
+    const currentDebuggerModel = currentTarget ? currentTarget.model(SDK.DebuggerModel.DebuggerModel) : null;
+    const details = currentDebuggerModel ? currentDebuggerModel.debuggerPausedDetails() : null;
 
-      if (details) {
-        const topCallFrame = details.callFrames[0];
-        const { callFrameId } = topCallFrame.payload;
-        const { scriptId } = topCallFrame.script;
-        const { lineNumber, columnNumber } = topCallFrame.location();
+    if (details && currentDebuggerModel) {
+      const topCallFrame = details.callFrames[0];
+      const { callFrameId } = topCallFrame.payload;
+      const { scriptId } = topCallFrame.script;
+      const { lineNumber, columnNumber } = topCallFrame.location();
 
-        if (topCallFrame.payload.functionLocation) {
-          const {
-            lineNumber: lineNumberOfFunction,
-          } = topCallFrame.payload.functionLocation;
+      if (topCallFrame.payload.functionLocation) {
+        const {
+          lineNumber: lineNumberOfFunction,
+        } = topCallFrame.payload.functionLocation;
 
-          const response = await debuggerModel.agent.invoke_getPossibleBreakpoints({
-            start: {
-              scriptId,
-              lineNumber: lineNumberOfFunction + 1
-            },
-            restrictToFunction: true
-          });
-          const possibleBreakpointsInFuncScope = response.locations;
+        const response = await currentDebuggerModel.agent.invoke_getPossibleBreakpoints({
+          start: {
+            scriptId,
+            lineNumber: lineNumberOfFunction + 1
+          },
+          restrictToFunction: true
+        });
+        const possibleBreakpointsInFuncScope = response.locations;
 
-          let possiblePrevBreakpoint = {
-            lineNumber: possibleBreakpointsInFuncScope[0].lineNumber,
-            columnNumber: possibleBreakpointsInFuncScope[0].columnNumber
-          };
-          let beforePossiblePrevBreakpoint = {
-            lineNumber: possibleBreakpointsInFuncScope[0].lineNumber,
-            columnNumber: possibleBreakpointsInFuncScope[0].columnNumber
-          };
-          let isFirstLine: boolean = false;
-          let isSecondLine: boolean = false;
+        let possiblePrevBreakpoint = {
+          lineNumber: possibleBreakpointsInFuncScope[0].lineNumber,
+          columnNumber: possibleBreakpointsInFuncScope[0].columnNumber || 0
+        };
+        let beforePossiblePrevBreakpoint = {
+          lineNumber: possibleBreakpointsInFuncScope[0].lineNumber,
+          columnNumber: possibleBreakpointsInFuncScope[0].columnNumber || 0
+        };
+        let isFirstLine: boolean = false;
+        let isSecondLine: boolean = false;
 
-          for (let i = 0 ; i < possibleBreakpointsInFuncScope.length ; i += 1) {
-            const isCurrentIndex = (possibleBreakpointsInFuncScope[i].lineNumber === lineNumber) && (possibleBreakpointsInFuncScope[i].columnNumber === columnNumber);
-            if (isCurrentIndex && i === 0) {
-              isFirstLine = true;
-              break;
-            }
-            if (isCurrentIndex && i === 1) {
-              isSecondLine = true;
-              break;
-            }
-            if (isCurrentIndex && i > 1) {
-              possiblePrevBreakpoint = {
-                lineNumber: possibleBreakpointsInFuncScope[i - 1].lineNumber,
-                columnNumber: possibleBreakpointsInFuncScope[i - 1].columnNumber || 0
-              };
-              beforePossiblePrevBreakpoint = {
-                lineNumber: possibleBreakpointsInFuncScope[i - 2].lineNumber,
-                columnNumber: possibleBreakpointsInFuncScope[i - 2].columnNumber || 0
-              };
-            }
+        for (let i = 0 ; i < possibleBreakpointsInFuncScope.length ; i += 1) {
+          const isCurrentIndex = (possibleBreakpointsInFuncScope[i].lineNumber === lineNumber) && (possibleBreakpointsInFuncScope[i].columnNumber === columnNumber);
+          if (isCurrentIndex && i === 0) {
+            isFirstLine = true;
+            break;
           }
-
-          if (!isFirstLine) {
-            const {
-              breakpointId: breakpointId1,
-            } = await debuggerModel.agent.invoke_setBreakpoint({location: {
-              scriptId,
-              ...possiblePrevBreakpoint
-            }});
-
-            const {
-              breakpointId: breakpointId2,
-            } = await debuggerModel.agent.invoke_setBreakpoint({location: {
-              scriptId,
-              ...beforePossiblePrevBreakpoint
-            }});
-
-            await debuggerModel.agent.invoke_restartFrame({
-              callFrameId,
-              mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
-            });
-
-            if (isSecondLine) {
-              // 현재 await하면 resumed 되므로, 비동기 작동을 위해 await하지 않음
-              void debuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpointId1});
-
-              return true;
-            }
-
-            await debuggerModel.agent.invoke_resume({terminateOnResume: false});
-
-            for (
-              let pausedLine = this.getPausedLineAfterRestart();
-              pausedLine !== null && pausedLine < beforePossiblePrevBreakpoint.lineNumber;
-              pausedLine = this.getPausedLineAfterRestart()
-            ){
-              await debuggerModel.agent.invoke_resume({terminateOnResume: false});
-            }
-
-            await debuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpointId1});
-            await debuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpointId2});
+          if (isCurrentIndex && i === 1) {
+            isSecondLine = true;
+            break;
+          }
+          if (isCurrentIndex && i > 1) {
+            possiblePrevBreakpoint = {
+              lineNumber: possibleBreakpointsInFuncScope[i - 1].lineNumber,
+              columnNumber: possibleBreakpointsInFuncScope[i - 1].columnNumber || 0
+            };
+            beforePossiblePrevBreakpoint = {
+              lineNumber: possibleBreakpointsInFuncScope[i - 2].lineNumber,
+              columnNumber: possibleBreakpointsInFuncScope[i - 2].columnNumber || 0
+            };
           }
         }
 
+        if (isFirstLine) {
+          return true;
+        }
+
+        if (!isFirstLine) {
+          const scopeChains = topCallFrame.payload.scopeChain;
+          const parentScopeObjectInLoop = scopeChains.filter(scope => {
+            if (scope.type === 'block') {
+              return true;
+            }
+            return false;
+          })[1];
+          const isInLoop = parentScopeObjectInLoop ? true : false;
+          const parentScopeObjectId = isInLoop ? parentScopeObjectInLoop.object.objectId : null;
+
+          const runtimeModel = currentDebuggerModel.runtimeModel();
+          let condition: string | null = null;
+          if (isInLoop && parentScopeObjectId) {
+            const response = await runtimeModel.agent.invoke_getProperties({
+              objectId: parentScopeObjectId,
+              ownProperties: true
+            });
+            if (response.result[0].value && response.result[0].value.type === 'number') {
+              const key = response.result[0].name;
+              const value = response.result[0].value.value;
+              condition = `${key} === ${value}`;
+            }
+          }
+
+          const breakpointRequest1 = condition ? {
+            location: {
+              scriptId,
+              ...possiblePrevBreakpoint
+            },
+            condition
+          } : {
+            location: {
+              scriptId,
+              ...possiblePrevBreakpoint
+            }
+          };
+
+          const breakpointRequest2 = condition ? {
+            location: {
+              scriptId,
+              ...beforePossiblePrevBreakpoint
+            },
+            condition
+          } : {
+            location: {
+              scriptId,
+              ...beforePossiblePrevBreakpoint
+            }
+          };
+
+          const {
+            breakpointId: breakpointId1,
+          } = await currentDebuggerModel.agent.invoke_setBreakpoint(breakpointRequest1);
+
+          const {
+            breakpointId: breakpointId2,
+          } = await currentDebuggerModel.agent.invoke_setBreakpoint(breakpointRequest2);
+
+          await currentDebuggerModel.agent.invoke_restartFrame({
+            callFrameId,
+            mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
+          });
+
+          if (isSecondLine) {
+            // 현재 await하면 resumed 되므로, 비동기 작동을 위해 await하지 않음
+            void currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpointId1});
+
+            return true;
+          }
+
+          await currentDebuggerModel.agent.invoke_resume({terminateOnResume: false});
+
+          for (
+            let pausedLineAndColumn = this.getPausedLineAndColumnAfterRestart();
+            pausedLineAndColumn !== null &&
+            ((pausedLineAndColumn.lineNumber < beforePossiblePrevBreakpoint.lineNumber) || ( pausedLineAndColumn.lineNumber === beforePossiblePrevBreakpoint.lineNumber && pausedLineAndColumn.columnNumber < beforePossiblePrevBreakpoint.columnNumber));
+            pausedLineAndColumn = this.getPausedLineAndColumnAfterRestart()
+          ){
+            await currentDebuggerModel.agent.invoke_resume({terminateOnResume: false});
+          }
+
+          await currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpointId1});
+          await currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpointId2});
+        }
       }
     }
-
     return true;
   }
 
-  getPausedLineAfterRestart(): number | null {
+  getPausedLineAndColumnAfterRestart(): {
+    lineNumber: number,
+    columnNumber: number,
+  } | null {
     const target = UI.Context.Context.instance().flavor(SDK.Target.Target);
 
     if (!target) {
@@ -971,7 +1018,10 @@ export class SourcesPanel extends UI.Panel.Panel implements
     if (debuggerModel) {
       const details = debuggerModel ? debuggerModel.debuggerPausedDetails() : null;
 
-      return (details) ? details.callFrames[0].location().lineNumber : null;
+      return (details) ? {
+        lineNumber: details.callFrames[0].location().lineNumber,
+        columnNumber: details.callFrames[0].location().columnNumber
+      } : null;
     }
 
     return null;
