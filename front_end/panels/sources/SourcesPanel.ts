@@ -926,7 +926,19 @@ export class SourcesPanel extends UI.Panel.Panel implements
           const parentBlockScope = blockScopes[1];
 
           const runtimeModel = currentDebuggerModel.runtimeModel();
-          let condition: string | null = null;
+
+          let breakpointRequest1: Protocol.Debugger.SetBreakpointRequest = {
+            location: {
+              scriptId,
+              ...prevBreakpointInFunction
+            }
+          };
+          let breakpointRequest2: Protocol.Debugger.SetBreakpointRequest = {
+            location: {
+              scriptId,
+              ...beforePrevBreakpointInFucntion
+            }
+          };
 
           let orderFromCurrnetBlockScope: number | null = null;
 
@@ -953,6 +965,93 @@ export class SourcesPanel extends UI.Panel.Panel implements
           }
 
           if (
+            currentBlockScope &&
+            parentBlockScope &&
+            orderFromCurrnetBlockScope!==null &&
+            (orderFromCurrnetBlockScope === 1 || orderFromCurrnetBlockScope === 0)
+          ) {
+            const {
+              startLocation: parentBlockScopeStart,
+              endLocation: parentBlockScopeEnd,
+            } = parentBlockScope;
+            const {
+              startLocation: currentBlockScopeStart,
+              endLocation: currentBlockScopeEnd,
+            } = currentBlockScope;
+            let breakPointsInHeadRange:Protocol.Debugger.BreakLocation[] = [];
+
+            if (
+              parentBlockScopeStart &&
+              parentBlockScopeEnd &&
+              currentBlockScopeStart &&
+              currentBlockScopeEnd
+            ) {
+              const headRange = {
+                startLocation: {
+                  scriptId,
+                  lineNumber: parentBlockScopeStart.lineNumber,
+                  columnNumber: parentBlockScopeStart.columnNumber,
+                },
+                endLocation: {
+                  scriptId,
+                  lineNumber: currentBlockScopeStart.lineNumber,
+                  columnNumber: currentBlockScopeStart.columnNumber
+                }
+              };
+              breakPointsInHeadRange = await this.getBreakPointsInBlockScope({
+                currentDebuggerModel,
+                blockScopeStart: headRange.startLocation,
+                blockScopeEnd: headRange.endLocation
+              });
+            }
+
+            if (breakPointsInHeadRange.length === 3) {
+              const initializationPart = breakPointsInHeadRange[0];
+              const conditionPart = breakPointsInHeadRange[1];
+
+              const {object: {
+                objectId : parentScopeObjectId
+              }} = parentBlockScope;
+
+              if (parentScopeObjectId) {
+                const response = await runtimeModel.agent.invoke_getProperties({
+                  objectId: parentScopeObjectId,
+                  ownProperties: true
+                });
+                if (response.result[0].value && response.result[0].value.type === 'number') {
+                  const key = response.result[0].name;
+                  const value = response.result[0].value.value;
+                  const condition = `${key} === ${value}`;
+
+                  if (orderFromCurrnetBlockScope === 1) {
+                    breakpointRequest1 = {
+                      location: {
+                        scriptId,
+                        ...prevBreakpointInFunction
+                      },
+                      condition
+                    };
+                    breakpointRequest2 = {
+                      location: {...conditionPart},
+                      condition
+                    };
+                  }
+
+                  if (orderFromCurrnetBlockScope === 0) {
+                    breakpointRequest1 = {
+                      location: {...conditionPart},
+                      condition
+                    };
+                    breakpointRequest2 = {
+                      location: {...initializationPart},
+                    };
+                  }
+                }
+              }
+            }
+          }
+
+          if (
             parentBlockScope &&
             orderFromCurrnetBlockScope!==null &&
             orderFromCurrnetBlockScope > 1
@@ -969,36 +1068,24 @@ export class SourcesPanel extends UI.Panel.Panel implements
               if (response.result[0].value && response.result[0].value.type === 'number') {
                 const key = response.result[0].name;
                 const value = response.result[0].value.value;
-                condition = `${key} === ${value}`;
+                const condition = `${key} === ${value}`;
+                breakpointRequest1 = {
+                  location: {
+                    scriptId,
+                    ...prevBreakpointInFunction
+                  },
+                  condition
+                };
+                breakpointRequest2 = {
+                  location: {
+                    scriptId,
+                    ...beforePrevBreakpointInFucntion
+                  },
+                  condition
+                };
               }
             }
           }
-
-          const breakpointRequest1 = condition ? {
-            location: {
-              scriptId,
-              ...prevBreakpointInFunction
-            },
-            condition
-          } : {
-            location: {
-              scriptId,
-              ...prevBreakpointInFunction
-            }
-          };
-
-          const breakpointRequest2 = condition ? {
-            location: {
-              scriptId,
-              ...beforePrevBreakpointInFucntion
-            },
-            condition
-          } : {
-            location: {
-              scriptId,
-              ...beforePrevBreakpointInFucntion
-            }
-          };
 
           const {
             breakpointId: breakpointId1,
@@ -1025,7 +1112,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
           for (
             let pausedLineAndColumn = this.getPausedLineAndColumnAfterRestart();
             pausedLineAndColumn !== null &&
-            ((pausedLineAndColumn.lineNumber < beforePrevBreakpointInFucntion.lineNumber) || ( pausedLineAndColumn.lineNumber === beforePrevBreakpointInFucntion.lineNumber && pausedLineAndColumn.columnNumber < beforePrevBreakpointInFucntion.columnNumber));
+            ((pausedLineAndColumn.lineNumber < breakpointRequest2.location.lineNumber) || ( pausedLineAndColumn.lineNumber === breakpointRequest2.location.lineNumber && pausedLineAndColumn.columnNumber < (breakpointRequest2.location.columnNumber || 0)));
             pausedLineAndColumn = this.getPausedLineAndColumnAfterRestart()
           ){
             await currentDebuggerModel.agent.invoke_resume({terminateOnResume: false});
