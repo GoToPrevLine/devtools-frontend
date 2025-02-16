@@ -876,11 +876,11 @@ export class SourcesPanel extends UI.Panel.Panel implements
         });
         const possibleBreakpointsInFuncScope = response.locations;
 
-        let possiblePrevBreakpoint = {
+        let prevBreakpointInFunction = {
           lineNumber: possibleBreakpointsInFuncScope[0].lineNumber,
           columnNumber: possibleBreakpointsInFuncScope[0].columnNumber || 0
         };
-        let beforePossiblePrevBreakpoint = {
+        let beforePrevBreakpointInFucntion = {
           lineNumber: possibleBreakpointsInFuncScope[0].lineNumber,
           columnNumber: possibleBreakpointsInFuncScope[0].columnNumber || 0
         };
@@ -898,11 +898,11 @@ export class SourcesPanel extends UI.Panel.Panel implements
             break;
           }
           if (isCurrentIndex && i > 1) {
-            possiblePrevBreakpoint = {
+            prevBreakpointInFunction = {
               lineNumber: possibleBreakpointsInFuncScope[i - 1].lineNumber,
               columnNumber: possibleBreakpointsInFuncScope[i - 1].columnNumber || 0
             };
-            beforePossiblePrevBreakpoint = {
+            beforePrevBreakpointInFucntion = {
               lineNumber: possibleBreakpointsInFuncScope[i - 2].lineNumber,
               columnNumber: possibleBreakpointsInFuncScope[i - 2].columnNumber || 0
             };
@@ -931,17 +931,26 @@ export class SourcesPanel extends UI.Panel.Panel implements
           let orderFromCurrnetBlockScope: number | null = null;
 
           if (currentBlockScope) {
-            const order = await this.getOrderFromCurrnetBlockScope({
-              currentBlockScope,
-              currentDebuggerModel,
-              currentLineNumber,
-              currentColumnNumber
-            });
+            const {
+              startLocation: currentBlockScopeStart,
+              endLocation: currentBlockScopeEnd,
+            } = currentBlockScope;
 
-            orderFromCurrnetBlockScope = order >= 0 ? order : null ;
+            if (currentBlockScopeStart && currentBlockScopeEnd) {
+              const breakPointsInCurrentBlockScope = await this.getBreakPointsInBlockScope({
+                currentDebuggerModel,
+                blockScopeStart: currentBlockScopeStart,
+                blockScopeEnd: currentBlockScopeEnd
+              });
+              const order = this.getOrderFromCurrnetBlockScope({
+                currentLineNumber,
+                currentColumnNumber,
+                breakPointsInCurrentBlockScope
+              });
+
+              orderFromCurrnetBlockScope = order >= 0 ? order : null ;
+            }
           }
-
-          orderFromCurrnetBlockScope;
 
           if (
             parentBlockScope &&
@@ -968,26 +977,26 @@ export class SourcesPanel extends UI.Panel.Panel implements
           const breakpointRequest1 = condition ? {
             location: {
               scriptId,
-              ...possiblePrevBreakpoint
+              ...prevBreakpointInFunction
             },
             condition
           } : {
             location: {
               scriptId,
-              ...possiblePrevBreakpoint
+              ...prevBreakpointInFunction
             }
           };
 
           const breakpointRequest2 = condition ? {
             location: {
               scriptId,
-              ...beforePossiblePrevBreakpoint
+              ...beforePrevBreakpointInFucntion
             },
             condition
           } : {
             location: {
               scriptId,
-              ...beforePossiblePrevBreakpoint
+              ...beforePrevBreakpointInFucntion
             }
           };
 
@@ -1016,7 +1025,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
           for (
             let pausedLineAndColumn = this.getPausedLineAndColumnAfterRestart();
             pausedLineAndColumn !== null &&
-            ((pausedLineAndColumn.lineNumber < beforePossiblePrevBreakpoint.lineNumber) || ( pausedLineAndColumn.lineNumber === beforePossiblePrevBreakpoint.lineNumber && pausedLineAndColumn.columnNumber < beforePossiblePrevBreakpoint.columnNumber));
+            ((pausedLineAndColumn.lineNumber < beforePrevBreakpointInFucntion.lineNumber) || ( pausedLineAndColumn.lineNumber === beforePrevBreakpointInFucntion.lineNumber && pausedLineAndColumn.columnNumber < beforePrevBreakpointInFucntion.columnNumber));
             pausedLineAndColumn = this.getPausedLineAndColumnAfterRestart()
           ){
             await currentDebuggerModel.agent.invoke_resume({terminateOnResume: false});
@@ -1054,49 +1063,49 @@ export class SourcesPanel extends UI.Panel.Panel implements
     return null;
   }
 
-  async getOrderFromCurrnetBlockScope({
-    currentBlockScope,
-    currentDebuggerModel,
+  getOrderFromCurrnetBlockScope({
     currentLineNumber,
-    currentColumnNumber
+    currentColumnNumber,
+    breakPointsInCurrentBlockScope
   }:{
-    currentBlockScope: Protocol.Debugger.Scope,
-    currentDebuggerModel: SDK.DebuggerModel.DebuggerModel,
     currentLineNumber: number,
     currentColumnNumber: number,
-  }) : Promise<number> {
-    const {
-      startLocation: currentBlockScopeStart,
-      endLocation: currentBlockScopeEnd,
-    } = currentBlockScope;
+    breakPointsInCurrentBlockScope: Protocol.Debugger.BreakLocation[],
+  }) : number {
+    const orderFromCurrnetBlockScope =  breakPointsInCurrentBlockScope.findIndex(breakPoint => {
+      const isInLoopBody = (
+        breakPoint.lineNumber  === currentLineNumber &&
+        breakPoint.columnNumber === currentColumnNumber
+      );
+      return isInLoopBody;
+    });
 
-    if (currentBlockScopeStart && currentBlockScopeEnd) {
-      const {locations: breakPointsInCurrentBlockScope} = await currentDebuggerModel.agent.invoke_getPossibleBreakpoints({
-        start: {
-          scriptId: currentBlockScopeStart.scriptId,
-          lineNumber: currentBlockScopeStart.lineNumber,
-          columnNumber: currentBlockScopeStart.columnNumber,
-        },
-        end: {
-          scriptId: currentBlockScopeEnd.scriptId,
-          lineNumber: currentBlockScopeEnd.lineNumber,
-          columnNumber: currentBlockScopeEnd.columnNumber,
-        },
-        restrictToFunction: true
-      });
+    return orderFromCurrnetBlockScope;
+  }
 
-      const orderFromCurrnetBlockScope =  breakPointsInCurrentBlockScope.findIndex(breakPoint => {
-        const isInLoopBody = (
-          breakPoint.lineNumber  === currentLineNumber &&
-          breakPoint.columnNumber === currentColumnNumber
-        );
-        return isInLoopBody;
-      });
-
-      return orderFromCurrnetBlockScope;
-    }
-
-    return -1;
+  async getBreakPointsInBlockScope({
+    currentDebuggerModel,
+    blockScopeStart,
+    blockScopeEnd
+  } : {
+    currentDebuggerModel: SDK.DebuggerModel.DebuggerModel,
+    blockScopeStart: Protocol.Debugger.Location,
+    blockScopeEnd: Protocol.Debugger.Location,
+}) : Promise<Protocol.Debugger.BreakLocation[]> {
+    const {locations: breakPointsInCurrentBlockScope} = await currentDebuggerModel.agent.invoke_getPossibleBreakpoints({
+      start: {
+        scriptId: blockScopeStart.scriptId,
+        lineNumber: blockScopeStart.lineNumber,
+        columnNumber: blockScopeStart.columnNumber,
+      },
+      end: {
+        scriptId: blockScopeEnd.scriptId,
+        lineNumber: blockScopeEnd.lineNumber,
+        columnNumber: blockScopeEnd.columnNumber,
+      },
+      restrictToFunction: true
+    });
+    return breakPointsInCurrentBlockScope;
   }
 
   private async continueToLocation(uiLocation: Workspace.UISourceCode.UILocation): Promise<void> {
