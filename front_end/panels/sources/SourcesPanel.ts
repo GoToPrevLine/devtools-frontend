@@ -860,7 +860,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
       const topCallFrame = details.callFrames[0];
       const { callFrameId } = topCallFrame.payload;
       const { scriptId } = topCallFrame.script;
-      const { lineNumber, columnNumber } = topCallFrame.location();
+      const { lineNumber: currentLineNumber, columnNumber: currentColumnNumber } = topCallFrame.location();
 
       if (topCallFrame.payload.functionLocation) {
         const {
@@ -888,7 +888,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
         let isSecondLine: boolean = false;
 
         for (let i = 0 ; i < possibleBreakpointsInFuncScope.length ; i += 1) {
-          const isCurrentIndex = (possibleBreakpointsInFuncScope[i].lineNumber === lineNumber) && (possibleBreakpointsInFuncScope[i].columnNumber === columnNumber);
+          const isCurrentIndex = (possibleBreakpointsInFuncScope[i].lineNumber === currentLineNumber) && (possibleBreakpointsInFuncScope[i].columnNumber === currentColumnNumber);
           if (isCurrentIndex && i === 0) {
             isFirstLine = true;
             break;
@@ -915,26 +915,53 @@ export class SourcesPanel extends UI.Panel.Panel implements
 
         if (!isFirstLine) {
           const scopeChains = topCallFrame.payload.scopeChain;
-          const parentScopeObjectInLoop = scopeChains.filter(scope => {
+          const blockScopes = scopeChains.filter(scope => {
             if (scope.type === 'block') {
               return true;
             }
             return false;
-          })[1];
-          const isInLoop = parentScopeObjectInLoop ? true : false;
-          const parentScopeObjectId = isInLoop ? parentScopeObjectInLoop.object.objectId : null;
+          });
+
+          const currentBlockScope = blockScopes[0];
+          const parentBlockScope = blockScopes[1];
 
           const runtimeModel = currentDebuggerModel.runtimeModel();
           let condition: string | null = null;
-          if (isInLoop && parentScopeObjectId) {
-            const response = await runtimeModel.agent.invoke_getProperties({
-              objectId: parentScopeObjectId,
-              ownProperties: true
+
+          let orderFromCurrnetBlockScope: number | null = null;
+
+          if (currentBlockScope) {
+            const order = await this.getOrderFromCurrnetBlockScope({
+              currentBlockScope,
+              currentDebuggerModel,
+              currentLineNumber,
+              currentColumnNumber
             });
-            if (response.result[0].value && response.result[0].value.type === 'number') {
-              const key = response.result[0].name;
-              const value = response.result[0].value.value;
-              condition = `${key} === ${value}`;
+
+            orderFromCurrnetBlockScope = order >= 0 ? order : null ;
+          }
+
+          orderFromCurrnetBlockScope;
+
+          if (
+            parentBlockScope &&
+            orderFromCurrnetBlockScope!==null &&
+            orderFromCurrnetBlockScope > 1
+          ) {
+            const {object: {
+              objectId : parentScopeObjectId
+            }} = parentBlockScope;
+
+            if (parentScopeObjectId) {
+              const response = await runtimeModel.agent.invoke_getProperties({
+                objectId: parentScopeObjectId,
+                ownProperties: true
+              });
+              if (response.result[0].value && response.result[0].value.type === 'number') {
+                const key = response.result[0].name;
+                const value = response.result[0].value.value;
+                condition = `${key} === ${value}`;
+              }
             }
           }
 
@@ -1025,6 +1052,51 @@ export class SourcesPanel extends UI.Panel.Panel implements
     }
 
     return null;
+  }
+
+  async getOrderFromCurrnetBlockScope({
+    currentBlockScope,
+    currentDebuggerModel,
+    currentLineNumber,
+    currentColumnNumber
+  }:{
+    currentBlockScope: Protocol.Debugger.Scope,
+    currentDebuggerModel: SDK.DebuggerModel.DebuggerModel,
+    currentLineNumber: number,
+    currentColumnNumber: number,
+  }) : Promise<number> {
+    const {
+      startLocation: currentBlockScopeStart,
+      endLocation: currentBlockScopeEnd,
+    } = currentBlockScope;
+
+    if (currentBlockScopeStart && currentBlockScopeEnd) {
+      const {locations: breakPointsInCurrentBlockScope} = await currentDebuggerModel.agent.invoke_getPossibleBreakpoints({
+        start: {
+          scriptId: currentBlockScopeStart.scriptId,
+          lineNumber: currentBlockScopeStart.lineNumber,
+          columnNumber: currentBlockScopeStart.columnNumber,
+        },
+        end: {
+          scriptId: currentBlockScopeEnd.scriptId,
+          lineNumber: currentBlockScopeEnd.lineNumber,
+          columnNumber: currentBlockScopeEnd.columnNumber,
+        },
+        restrictToFunction: true
+      });
+
+      const orderFromCurrnetBlockScope =  breakPointsInCurrentBlockScope.findIndex(breakPoint => {
+        const isInLoopBody = (
+          breakPoint.lineNumber  === currentLineNumber &&
+          breakPoint.columnNumber === currentColumnNumber
+        );
+        return isInLoopBody;
+      });
+
+      return orderFromCurrnetBlockScope;
+    }
+
+    return -1;
   }
 
   private async continueToLocation(uiLocation: Workspace.UISourceCode.UILocation): Promise<void> {
