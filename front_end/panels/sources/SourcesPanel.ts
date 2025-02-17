@@ -862,6 +862,15 @@ export class SourcesPanel extends UI.Panel.Panel implements
       const { scriptId } = topCallFrame.script;
       const { lineNumber: currentLineNumber, columnNumber: currentColumnNumber } = topCallFrame.location();
 
+      const response = await currentDebuggerModel.agent.invoke_evaluateOnCallFrame({
+        callFrameId,
+        expression: '[...arguments].map(arg => arg.toString())',
+        returnByValue: true,
+      });
+      const argumentList: string[] = response.result.value;
+      const stringifiedArgumentList = JSON.stringify(argumentList);
+      const defaultCondition = `JSON.stringify([...arguments].map(arg => arg.toString())) === '${stringifiedArgumentList}'`;
+
       if (topCallFrame.payload.functionLocation) {
         const {
           lineNumber: lineNumberOfFunction,
@@ -936,13 +945,15 @@ export class SourcesPanel extends UI.Panel.Panel implements
             location: {
               scriptId,
               ...prevBreakpointInFunction
-            }
+            },
+            condition: defaultCondition,
           };
           let breakpointRequest2: Protocol.Debugger.SetBreakpointRequest = {
             location: {
               scriptId,
               ...beforePrevBreakpointInFucntion
-            }
+            },
+            condition: defaultCondition,
           };
 
           let orderFromCurrnetBlockScope: number | null = null;
@@ -1034,21 +1045,22 @@ export class SourcesPanel extends UI.Panel.Panel implements
                         scriptId,
                         ...prevBreakpointInFunction
                       },
-                      condition
+                      condition: `${breakpointRequest1.condition} && ${condition}`
                     };
                     breakpointRequest2 = {
                       location: {...conditionPart},
-                      condition
+                      condition: `${breakpointRequest2.condition} && ${condition}`
                     };
                   }
 
                   if (orderFromCurrnetBlockScope === 0) {
                     breakpointRequest1 = {
                       location: {...conditionPart},
-                      condition
+                      condition: `${breakpointRequest1.condition} && ${condition}`
                     };
                     breakpointRequest2 = {
                       location: {...initializationPart},
+                      condition: `${breakpointRequest2.condition}`
                     };
                   }
                 }
@@ -1079,14 +1091,14 @@ export class SourcesPanel extends UI.Panel.Panel implements
                     scriptId,
                     ...prevBreakpointInFunction
                   },
-                  condition
+                  condition: `${breakpointRequest1.condition} && ${condition}`
                 };
                 breakpointRequest2 = {
                   location: {
                     scriptId,
                     ...beforePrevBreakpointInFucntion
                   },
-                  condition
+                  condition: `${breakpointRequest2.condition} && ${condition}`
                 };
               }
             }
@@ -1198,81 +1210,6 @@ export class SourcesPanel extends UI.Panel.Panel implements
       restrictToFunction: true
     });
     return breakPointsInCurrentBlockScope;
-  }
-
-  async getParametersAndArguments({
-    debuggerModel,
-    runtimeModel,
-    callFrameId,
-    localScope
-  }:{
-    debuggerModel: SDK.DebuggerModel.DebuggerModel,
-    runtimeModel: SDK.RuntimeModel.RuntimeModel,
-    callFrameId: Protocol.Debugger.CallFrameId,
-    localScope: Protocol.Debugger.Scope,
-  }) : Promise<{parameter: string, argument: unknown}[]>{
-    const responseWithJSON = await debuggerModel.agent.invoke_evaluateOnCallFrame({
-      callFrameId,
-      expression: 'arguments',
-      returnByValue: true,
-    });
-
-    let hasFunctionTypeArgument = false;
-
-    const argumentKeys = Object.keys(responseWithJSON.result.value);
-    const argumentList = Array.from(argumentKeys, key => responseWithJSON.result.value[key]);
-
-    argumentList.forEach(value => {
-      const isEmptyObject = JSON.stringify(value) === '{}';
-      if (isEmptyObject) {
-        hasFunctionTypeArgument = true;
-      }
-    });
-
-    if (hasFunctionTypeArgument) {
-      const {result: {
-        objectId: objectIdToCheckFunctionTypeArgument
-      }} = await debuggerModel.agent.invoke_evaluateOnCallFrame({
-        callFrameId,
-        expression: 'arguments',
-      });
-
-      if (objectIdToCheckFunctionTypeArgument) {
-        const {result: argumentsDescriptor} = await runtimeModel.agent.invoke_getProperties({
-          objectId: objectIdToCheckFunctionTypeArgument,
-          ownProperties: true,
-          generatePreview: true,
-        });
-
-        argumentsDescriptor.forEach(propertyDescriptor => {
-          if (propertyDescriptor.value?.type === 'function') {
-            const isArgumentKey = !Number.isNaN(Number(propertyDescriptor.name));
-            if (isArgumentKey) {
-              argumentList[Number(propertyDescriptor.name)] = propertyDescriptor.value.description;
-            }
-          }
-        });
-      }
-    }
-
-    const parametersAndArguments = [];
-
-    const localScopeObjectId = localScope.object.objectId;
-    if (localScopeObjectId) {
-      const {result: localVariablesDescriptor } = await runtimeModel.agent.invoke_getProperties({
-        objectId: localScopeObjectId,
-        ownProperties: true,
-      });
-
-      for (let i = 0 ; i < argumentList.length ; i += 1) {
-        const argument = argumentList[i];
-        const parameter = localVariablesDescriptor[i].name;
-
-        parametersAndArguments.push({argument, parameter});
-      }
-    }
-
-    return parametersAndArguments;
   }
 
   private async continueToLocation(uiLocation: Workspace.UISourceCode.UILocation): Promise<void> {
