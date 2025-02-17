@@ -865,12 +865,14 @@ export class SourcesPanel extends UI.Panel.Panel implements
       if (topCallFrame.payload.functionLocation) {
         const {
           lineNumber: lineNumberOfFunction,
+          columnNumber: columnNumberOfFunction,
         } = topCallFrame.payload.functionLocation;
 
         const response = await currentDebuggerModel.agent.invoke_getPossibleBreakpoints({
           start: {
             scriptId,
-            lineNumber: lineNumberOfFunction + 1
+            lineNumber: lineNumberOfFunction,
+            columnNumber: columnNumberOfFunction,
           },
           restrictToFunction: true
         });
@@ -887,26 +889,29 @@ export class SourcesPanel extends UI.Panel.Panel implements
         let isFirstLine: boolean = false;
         let isSecondLine: boolean = false;
 
-        for (let i = 0 ; i < possibleBreakpointsInFuncScope.length ; i += 1) {
-          const isCurrentIndex = (possibleBreakpointsInFuncScope[i].lineNumber === currentLineNumber) && (possibleBreakpointsInFuncScope[i].columnNumber === currentColumnNumber);
-          if (isCurrentIndex && i === 0) {
-            isFirstLine = true;
-            break;
-          }
-          if (isCurrentIndex && i === 1) {
-            isSecondLine = true;
-            break;
-          }
-          if (isCurrentIndex && i > 1) {
-            prevBreakpointInFunction = {
-              lineNumber: possibleBreakpointsInFuncScope[i - 1].lineNumber,
-              columnNumber: possibleBreakpointsInFuncScope[i - 1].columnNumber || 0
-            };
-            beforePrevBreakpointInFucntion = {
-              lineNumber: possibleBreakpointsInFuncScope[i - 2].lineNumber,
-              columnNumber: possibleBreakpointsInFuncScope[i - 2].columnNumber || 0
-            };
-          }
+        const orderFromFunctionScope = this.getOrderFromCurrnetScope({
+          currentLineNumber,
+          currentColumnNumber,
+          breakPointsInCurrentScope: possibleBreakpointsInFuncScope,
+        });
+
+        if (orderFromFunctionScope === 0) {
+          isFirstLine = true;
+        }
+
+        if (orderFromFunctionScope === 1) {
+          isSecondLine = true;
+        }
+
+        if (orderFromFunctionScope > 1) {
+          prevBreakpointInFunction = {
+            lineNumber: possibleBreakpointsInFuncScope[orderFromFunctionScope - 1].lineNumber,
+            columnNumber: possibleBreakpointsInFuncScope[orderFromFunctionScope - 1].columnNumber || 0
+          };
+          beforePrevBreakpointInFucntion = {
+            lineNumber: possibleBreakpointsInFuncScope[orderFromFunctionScope - 2].lineNumber,
+            columnNumber: possibleBreakpointsInFuncScope[orderFromFunctionScope - 2].columnNumber || 0
+          };
         }
 
         if (isFirstLine) {
@@ -954,10 +959,10 @@ export class SourcesPanel extends UI.Panel.Panel implements
                 blockScopeStart: currentBlockScopeStart,
                 blockScopeEnd: currentBlockScopeEnd
               });
-              const order = this.getOrderFromCurrnetBlockScope({
+              const order = this.getOrderFromCurrnetScope({
                 currentLineNumber,
                 currentColumnNumber,
-                breakPointsInCurrentBlockScope
+                breakPointsInCurrentScope: breakPointsInCurrentBlockScope
               });
 
               orderFromCurrnetBlockScope = order >= 0 ? order : null ;
@@ -1150,24 +1155,24 @@ export class SourcesPanel extends UI.Panel.Panel implements
     return null;
   }
 
-  getOrderFromCurrnetBlockScope({
+  getOrderFromCurrnetScope({
     currentLineNumber,
     currentColumnNumber,
-    breakPointsInCurrentBlockScope
+    breakPointsInCurrentScope,
   }:{
     currentLineNumber: number,
     currentColumnNumber: number,
-    breakPointsInCurrentBlockScope: Protocol.Debugger.BreakLocation[],
+    breakPointsInCurrentScope: Protocol.Debugger.BreakLocation[],
   }) : number {
-    const orderFromCurrnetBlockScope =  breakPointsInCurrentBlockScope.findIndex(breakPoint => {
-      const isInLoopBody = (
+    const orderFromCurrnetScope =  breakPointsInCurrentScope.findIndex(breakPoint => {
+      const isInScope = (
         breakPoint.lineNumber  === currentLineNumber &&
         breakPoint.columnNumber === currentColumnNumber
       );
-      return isInLoopBody;
+      return isInScope;
     });
 
-    return orderFromCurrnetBlockScope;
+    return orderFromCurrnetScope;
   }
 
   async getBreakPointsInBlockScope({
