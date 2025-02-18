@@ -864,12 +864,12 @@ export class SourcesPanel extends UI.Panel.Panel implements
 
       const response = await currentDebuggerModel.agent.invoke_evaluateOnCallFrame({
         callFrameId,
-        expression: '[...arguments].map(arg => arg.toString())',
+        expression: '[...arguments].map((arg) => typeof arg === "function" ? arg.toString() : JSON.stringify(arg))',
         returnByValue: true,
       });
       const argumentList: string[] = response.result.value;
       const stringifiedArgumentList = JSON.stringify(argumentList);
-      const defaultCondition = `JSON.stringify([...arguments].map(arg => arg.toString())) === '${stringifiedArgumentList}'`;
+      const defaultCondition = `JSON.stringify([...arguments].map((arg) => typeof arg === "function" ? arg.toString() : JSON.stringify(arg))) === '${stringifiedArgumentList}'`;
 
       if (topCallFrame.payload.functionLocation) {
         const {
@@ -913,14 +913,77 @@ export class SourcesPanel extends UI.Panel.Panel implements
         }
 
         if (orderFromFunctionScope > 1) {
-          prevBreakpointInFunction = {
-            lineNumber: possibleBreakpointsInFuncScope[orderFromFunctionScope - 1].lineNumber,
-            columnNumber: possibleBreakpointsInFuncScope[orderFromFunctionScope - 1].columnNumber || 0
-          };
-          beforePrevBreakpointInFucntion = {
-            lineNumber: possibleBreakpointsInFuncScope[orderFromFunctionScope - 2].lineNumber,
-            columnNumber: possibleBreakpointsInFuncScope[orderFromFunctionScope - 2].columnNumber || 0
-          };
+          let prevReachable = false;
+          let prevReachableIndexInFuncScope = orderFromFunctionScope - 1;
+
+          while (!prevReachable && prevReachableIndexInFuncScope > 0) {
+            prevBreakpointInFunction = {
+              lineNumber: possibleBreakpointsInFuncScope[prevReachableIndexInFuncScope].lineNumber,
+              columnNumber: possibleBreakpointsInFuncScope[prevReachableIndexInFuncScope].columnNumber || 0
+            };
+
+            const funcSourceResponse = await currentDebuggerModel.agent.invoke_evaluateOnCallFrame({
+              callFrameId,
+              expression:`${topCallFrame.functionName}.toString()`,
+              returnByValue: true,
+            });
+            const funcSource:string = funcSourceResponse.result.value;
+
+            const funcLineList = funcSource.split(/[\n]/g);
+            const injectedFuncLineList = funcLineList.map((lineSource, index) => {
+              if (index === (prevBreakpointInFunction.lineNumber - lineNumberOfFunction)) {
+                return 'return {result: true};' + lineSource;
+              }
+              return lineSource;
+            });
+
+            const convertedToIIFE = `(${injectedFuncLineList.join('')})(...arguments)`;
+            const reachableResponse = await currentDebuggerModel.agent.invoke_evaluateOnCallFrame({
+              callFrameId,
+              expression: convertedToIIFE,
+              returnByValue: true,
+            });
+            prevReachable = reachableResponse.result.value?.result === true;
+            if (!prevReachable) {
+              prevReachableIndexInFuncScope -= 1;
+            }
+          }
+
+          let beforePrevReachable = false;
+          let beforePrevReachableIndexInFuncScope = prevReachableIndexInFuncScope - 1;
+
+          while (!beforePrevReachable && beforePrevReachableIndexInFuncScope >= 0) {
+            beforePrevBreakpointInFucntion = {
+              lineNumber: possibleBreakpointsInFuncScope[beforePrevReachableIndexInFuncScope].lineNumber,
+              columnNumber: possibleBreakpointsInFuncScope[beforePrevReachableIndexInFuncScope].columnNumber || 0
+            };
+
+            const funcSourceResponse = await currentDebuggerModel.agent.invoke_evaluateOnCallFrame({
+              callFrameId,
+              expression:`${topCallFrame.functionName}.toString()`,
+              returnByValue: true,
+            });
+            const funcSource:string = funcSourceResponse.result.value;
+
+            const funcLineList = funcSource.split(/[\n]/g);
+            const injectedFuncLineList = funcLineList.map((lineSource, index) => {
+              if (index === (beforePrevBreakpointInFucntion.lineNumber - lineNumberOfFunction)) {
+                return 'return {result: true};' + lineSource;
+              }
+              return lineSource;
+            });
+
+            const convertedToIIFE = `(${injectedFuncLineList.join('')})(...arguments)`;
+            const reachableResponse = await currentDebuggerModel.agent.invoke_evaluateOnCallFrame({
+              callFrameId,
+              expression: convertedToIIFE,
+              returnByValue: true,
+            });
+            beforePrevReachable = reachableResponse.result.value?.result === true;
+            if (!beforePrevReachable) {
+              beforePrevReachableIndexInFuncScope -= 1;
+            }
+          }
         }
 
         if (isFirstLine) {
