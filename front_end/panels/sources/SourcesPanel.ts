@@ -887,6 +887,70 @@ export class SourcesPanel extends UI.Panel.Panel implements
         });
         const possibleBreakpointsInFuncScope = response.locations;
 
+        async function checkInForLoopHead({
+          topCallFrame,
+          debuggerModel,
+          currentLineNumber,
+          currentColumnNumber,
+          breakPointsInCurrentBlockScope,
+        }: {
+          topCallFrame: SDK.DebuggerModel.CallFrame,
+          debuggerModel: SDK.DebuggerModel.DebuggerModel,
+          currentLineNumber: number,
+          currentColumnNumber: number,
+          breakPointsInCurrentBlockScope: Protocol.Debugger.BreakLocation[],
+        }): Promise<{result: false}|{result: true, parts: Protocol.Debugger.BreakLocation[], currentPartIndex: number}> {
+          const topScope = topCallFrame.payload.scopeChain[0];
+          const isInBlockScope = topScope.type === 'block';
+
+          if (!isInBlockScope) {
+            return {result: false};
+          }
+
+          const parts: Protocol.Debugger.BreakLocation[] = [];
+
+          for (let i = 0 ; i < 3 ; i += 1) {
+            if (breakPointsInCurrentBlockScope[i]) {
+              parts.push(breakPointsInCurrentBlockScope[i]);
+            }
+          }
+
+          if (parts.length !== 3) {
+            return {result: false};
+          }
+
+          const isInOneLine = parts.every(part => part.lineNumber === currentLineNumber);
+
+          if (!isInOneLine) {
+            return {result: false};
+          }
+
+          const forInContentResponse = await debuggerModel.agent.invoke_searchInContent({
+            scriptId: parts[0].scriptId,
+            query: '\\b(for)\\b',
+            caseSensitive: true,
+            isRegex: true
+          });
+          const forKeywordMatch = forInContentResponse.result
+            .find(searchMatch => searchMatch.lineNumber === parts[0].lineNumber);
+
+          if (!forKeywordMatch) {
+            return {result: false};
+          }
+
+          const currentPartIndex =  parts.findIndex(part => part.lineNumber === currentLineNumber && part.columnNumber === currentColumnNumber);
+
+          if (currentPartIndex === -1){
+            return {result: false};
+          }
+
+          return {
+            result: true,
+            currentPartIndex,
+            parts
+          };
+        }
+
         let prevBreakpointInFunction = {
           lineNumber: possibleBreakpointsInFuncScope[0].lineNumber,
           columnNumber: possibleBreakpointsInFuncScope[0].columnNumber || 0
@@ -995,6 +1059,14 @@ export class SourcesPanel extends UI.Panel.Panel implements
               });
 
               orderFromCurrnetBlockScope = order >= 0 ? order : null ;
+
+              const checkedIsInForLoopHead = await checkInForLoopHead({
+                topCallFrame,
+                debuggerModel: currentDebuggerModel,
+                currentLineNumber,
+                currentColumnNumber,
+                breakPointsInCurrentBlockScope
+              });
             }
           }
 
