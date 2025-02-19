@@ -864,12 +864,12 @@ export class SourcesPanel extends UI.Panel.Panel implements
 
       const response = await currentDebuggerModel.agent.invoke_evaluateOnCallFrame({
         callFrameId,
-        expression: '[...arguments].map((arg) => typeof arg === "function" ? arg.toString() : JSON.stringify(arg))',
+        expression: String.raw`JSON.stringify([...arguments].map((arg) => typeof arg === 'function' ? arg.name : arg))`,
         returnByValue: true,
       });
-      const argumentList: string[] = response.result.value;
-      const stringifiedArgumentList = JSON.stringify(argumentList);
-      const defaultCondition = `JSON.stringify([...arguments].map((arg) => typeof arg === "function" ? arg.toString() : JSON.stringify(arg))) === '${stringifiedArgumentList}'`;
+      const argumentsJSON: string = response.result.value;
+
+      const defaultCondition = String.raw`JSON.stringify([...arguments].map((arg) => typeof arg === 'function' ? arg.name : arg)) === '${argumentsJSON}'`;
 
       if (topCallFrame.payload.functionLocation) {
         const {
