@@ -1044,9 +1044,12 @@ export class SourcesPanel extends UI.Panel.Panel implements
             const {
               startLocation: currentBlockScopeStart,
               endLocation: currentBlockScopeEnd,
+              object: {
+                objectId: currentBlockScopeObjectId
+              }
             } = currentBlockScope;
 
-            if (currentBlockScopeStart && currentBlockScopeEnd) {
+            if (currentBlockScopeStart && currentBlockScopeEnd && currentBlockScopeObjectId) {
               const breakPointsInCurrentBlockScope = await this.getBreakPointsInBlockScope({
                 currentDebuggerModel,
                 blockScopeStart: currentBlockScopeStart,
@@ -1067,6 +1070,60 @@ export class SourcesPanel extends UI.Panel.Panel implements
                 currentColumnNumber,
                 breakPointsInCurrentBlockScope
               });
+
+              if (checkedIsInForLoopHead.result) {
+                if (checkedIsInForLoopHead.currentPartIndex === 2) {
+                  const response = await runtimeModel.agent.invoke_getProperties({
+                    objectId: currentBlockScopeObjectId,
+                    ownProperties: true
+                  });
+
+                  if (response.result[0].value && response.result[0].value.type === 'number') {
+                    const key = response.result[0].name;
+                    const value = response.result[0].value.value;
+                    const afterthoughtCondition = `${key} === ${value}`;
+
+                    const breakpoint1Response = await currentDebuggerModel.agent.invoke_setBreakpoint({
+                      location: {
+                        scriptId,
+                        lineNumber: breakPointsInCurrentBlockScope[breakPointsInCurrentBlockScope.length - 1].lineNumber,
+                        columnNumber: breakPointsInCurrentBlockScope[breakPointsInCurrentBlockScope.length - 1].columnNumber,
+                      },
+                      condition: `${defaultCondition} && ${afterthoughtCondition}`
+                    });
+
+                    const breakpoint2Response = await currentDebuggerModel.agent.invoke_setBreakpoint({
+                      location: {
+                        scriptId,
+                        lineNumber: breakPointsInCurrentBlockScope[breakPointsInCurrentBlockScope.length - 2].lineNumber,
+                        columnNumber: breakPointsInCurrentBlockScope[breakPointsInCurrentBlockScope.length - 2].columnNumber,
+                      },
+                      condition: `${defaultCondition} && ${afterthoughtCondition}`
+                    });
+
+                    await currentDebuggerModel.agent.invoke_restartFrame({
+                      callFrameId,
+                      mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
+                    });
+
+                    await currentDebuggerModel.agent.invoke_resume({terminateOnResume: false});
+
+                    for (
+                      let pausedLineAndColumn = this.getPausedLineAndColumnAfterRestart();
+                      pausedLineAndColumn !== null &&
+                      ((pausedLineAndColumn.lineNumber < breakpoint2Response.actualLocation.lineNumber) || ( pausedLineAndColumn.lineNumber === breakpoint2Response.actualLocation.lineNumber && pausedLineAndColumn.columnNumber < (breakpoint2Response.actualLocation.columnNumber || 0)));
+                      pausedLineAndColumn = this.getPausedLineAndColumnAfterRestart()
+                    ){
+                      await currentDebuggerModel.agent.invoke_resume({terminateOnResume: false});
+                    }
+
+                    await currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpoint1Response.breakpointId});
+                    await currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpoint2Response.breakpointId});
+
+                    return true;
+                  }
+                }
+              }
             }
           }
 
