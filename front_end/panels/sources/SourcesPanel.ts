@@ -890,7 +890,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
       columnNumber: columnNumberOfFunction,
     } = topCallFrame.payload.functionLocation;
 
-    const {locations: possibleBreakpointsInFuncScope} = await currentDebuggerModel.agent.invoke_getPossibleBreakpoints({
+    const {locations: possibleBreakpointsInCallFrame} = await currentDebuggerModel.agent.invoke_getPossibleBreakpoints({
       start: {
         scriptId,
         lineNumber: lineNumberOfFunction,
@@ -899,58 +899,58 @@ export class SourcesPanel extends UI.Panel.Panel implements
       restrictToFunction: true
     });
 
-    let prevBreakpointInFunction = {
-      lineNumber: possibleBreakpointsInFuncScope[0].lineNumber,
-      columnNumber: possibleBreakpointsInFuncScope[0].columnNumber || 0
+    let prevBreakpointInCallFrame = {
+      lineNumber: possibleBreakpointsInCallFrame[0].lineNumber,
+      columnNumber: possibleBreakpointsInCallFrame[0].columnNumber || 0
     };
-    let beforePrevBreakpointInFucntion = {
-      lineNumber: possibleBreakpointsInFuncScope[0].lineNumber,
-      columnNumber: possibleBreakpointsInFuncScope[0].columnNumber || 0
+    let beforePrevBreakpointInCallFrame = {
+      lineNumber: possibleBreakpointsInCallFrame[0].lineNumber,
+      columnNumber: possibleBreakpointsInCallFrame[0].columnNumber || 0
     };
     let isFirstLine: boolean = false;
     let isSecondLine: boolean = false;
 
-    const orderFromFunctionScope = this.getOrderFromCurrnetScope({
+    const orderFromCallFrame = this.getOrderFromCurrnetScope({
       currentLineNumber,
       currentColumnNumber,
-      breakPointsInCurrentScope: possibleBreakpointsInFuncScope,
+      breakPointsInCurrentScope: possibleBreakpointsInCallFrame,
     });
 
-    if (orderFromFunctionScope === 0) {
+    if (orderFromCallFrame === 0) {
       isFirstLine = true;
     }
 
-    if (orderFromFunctionScope === 1) {
+    if (orderFromCallFrame === 1) {
       isSecondLine = true;
     }
 
-    if (orderFromFunctionScope > 1) {
+    if (orderFromCallFrame > 1) {
       const {
-        reachableIndexInFuncScope: prevReachableIndexInFuncScope,
-        reachableBreackpointInFunction: prevReachableBreackpointInFunction
+        reachableIndexInCallFrame: prevReachableIndexInCallFrame,
+        reachableBreackpointInCallFrame: prevReachableBreackpointInCallFrame
       } = await this.getClosestReachableBreakpoint({
-        startingPoint: orderFromFunctionScope,
-        possibleBreakpointsInFuncScope,
+        startingPoint: orderFromCallFrame,
+        possibleBreakpointsInCallFrame,
         callFrameId,
         callFrameFunctionName: topCallFrame.functionName,
         debuggerModel: currentDebuggerModel,
         lineNumberOfFunctionLocation: lineNumberOfFunction
       });
 
-      prevBreakpointInFunction = prevReachableBreackpointInFunction;
+      prevBreakpointInCallFrame = prevReachableBreackpointInCallFrame;
 
       const {
-        reachableBreackpointInFunction: beforePrevReachableBreackpointInFunction
+        reachableBreackpointInCallFrame: beforePrevReachableBreackpointInCallFrame
       } = await this.getClosestReachableBreakpoint({
-        startingPoint: prevReachableIndexInFuncScope,
-        possibleBreakpointsInFuncScope,
+        startingPoint: prevReachableIndexInCallFrame,
+        possibleBreakpointsInCallFrame,
         callFrameId,
         callFrameFunctionName: topCallFrame.functionName,
         debuggerModel: currentDebuggerModel,
         lineNumberOfFunctionLocation: lineNumberOfFunction
       });
 
-      beforePrevBreakpointInFucntion = beforePrevReachableBreackpointInFunction;
+      beforePrevBreakpointInCallFrame = beforePrevReachableBreackpointInCallFrame;
     }
 
     if (isFirstLine) {
@@ -974,14 +974,14 @@ export class SourcesPanel extends UI.Panel.Panel implements
       let breakpointRequest1: Protocol.Debugger.SetBreakpointRequest = {
         location: {
           scriptId,
-          ...prevBreakpointInFunction
+          ...prevBreakpointInCallFrame
         },
         condition: defaultCondition,
       };
       let breakpointRequest2: Protocol.Debugger.SetBreakpointRequest = {
         location: {
           scriptId,
-          ...beforePrevBreakpointInFucntion
+          ...beforePrevBreakpointInCallFrame
         },
         condition: defaultCondition,
       };
@@ -1126,7 +1126,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
                 breakpointRequest1 = {
                   location: {
                     scriptId,
-                    ...prevBreakpointInFunction
+                    ...prevBreakpointInCallFrame
                   },
                   condition: `${breakpointRequest1.condition} && ${condition}`
                 };
@@ -1172,14 +1172,14 @@ export class SourcesPanel extends UI.Panel.Panel implements
             breakpointRequest1 = {
               location: {
                 scriptId,
-                ...prevBreakpointInFunction
+                ...prevBreakpointInCallFrame
               },
               condition: `${breakpointRequest1.condition} && ${condition}`
             };
             breakpointRequest2 = {
               location: {
                 scriptId,
-                ...beforePrevBreakpointInFucntion
+                ...beforePrevBreakpointInCallFrame
               },
               condition: `${breakpointRequest2.condition} && ${condition}`
             };
@@ -1284,30 +1284,30 @@ export class SourcesPanel extends UI.Panel.Panel implements
 
   async getClosestReachableBreakpoint({
     startingPoint,
-    possibleBreakpointsInFuncScope,
+    possibleBreakpointsInCallFrame,
     callFrameId,
     callFrameFunctionName,
     debuggerModel,
     lineNumberOfFunctionLocation
   } : {
     startingPoint: number,
-    possibleBreakpointsInFuncScope: Protocol.Debugger.BreakLocation[],
+    possibleBreakpointsInCallFrame: Protocol.Debugger.BreakLocation[],
     callFrameId: Protocol.Debugger.CallFrameId,
     callFrameFunctionName: string,
     debuggerModel: SDK.DebuggerModel.DebuggerModel,
     lineNumberOfFunctionLocation: number,
-  }): Promise<{reachableIndexInFuncScope: number, reachableBreackpointInFunction: {lineNumber: number, columnNumber: number}}> {
+  }): Promise<{reachableIndexInCallFrame: number, reachableBreackpointInCallFrame: {lineNumber: number, columnNumber: number}}> {
     let reachable = false;
-    let reachableIndexInFuncScope = startingPoint - 1;
-    let reachableBreackpointInFunction = {
-      lineNumber: possibleBreakpointsInFuncScope[0].lineNumber,
-      columnNumber: possibleBreakpointsInFuncScope[0].columnNumber || 0
+    let reachableIndexInCallFrame = startingPoint - 1;
+    let reachableBreackpointInCallFrame = {
+      lineNumber: possibleBreakpointsInCallFrame[0].lineNumber,
+      columnNumber: possibleBreakpointsInCallFrame[0].columnNumber || 0
     };
 
-    while (!reachable && reachableIndexInFuncScope >= 0) {
-      reachableBreackpointInFunction = {
-        lineNumber: possibleBreakpointsInFuncScope[reachableIndexInFuncScope].lineNumber,
-        columnNumber: possibleBreakpointsInFuncScope[reachableIndexInFuncScope].columnNumber || 0
+    while (!reachable && reachableIndexInCallFrame >= 0) {
+      reachableBreackpointInCallFrame = {
+        lineNumber: possibleBreakpointsInCallFrame[reachableIndexInCallFrame].lineNumber,
+        columnNumber: possibleBreakpointsInCallFrame[reachableIndexInCallFrame].columnNumber || 0
       };
 
       const funcSourceResponse = await debuggerModel.agent.invoke_evaluateOnCallFrame({
@@ -1319,7 +1319,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
 
       const funcLineList = funcSource.split(/[\n]/g);
       const injectedFuncLineList = funcLineList.map((lineSource, index) => {
-        if (index === (reachableBreackpointInFunction.lineNumber - lineNumberOfFunctionLocation)) {
+        if (index === (reachableBreackpointInCallFrame.lineNumber - lineNumberOfFunctionLocation)) {
           return 'return {result: true};' + lineSource;
         }
         return lineSource;
@@ -1333,13 +1333,13 @@ export class SourcesPanel extends UI.Panel.Panel implements
       });
       reachable = reachableResponse.result.value?.result === true;
       if (!reachable) {
-        reachableIndexInFuncScope -= 1;
+        reachableIndexInCallFrame -= 1;
       }
     }
 
     return {
-      reachableIndexInFuncScope,
-      reachableBreackpointInFunction
+      reachableIndexInCallFrame,
+      reachableBreackpointInCallFrame
     };
   }
 
