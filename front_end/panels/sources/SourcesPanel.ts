@@ -1101,24 +1101,12 @@ export class SourcesPanel extends UI.Panel.Panel implements
                       condition: `${defaultCondition} && ${afterthoughtCondition}`
                     });
 
-                    await currentDebuggerModel.agent.invoke_restartFrame({
+                    await this.continueToPausedOnPrevBreakpointAndRemove({
+                      debuggerModel: currentDebuggerModel,
                       callFrameId,
-                      mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
+                      breakpoint1Response,
+                      breakpoint2Response
                     });
-
-                    await currentDebuggerModel.agent.invoke_resume({terminateOnResume: false});
-
-                    for (
-                      let pausedLineAndColumn = this.getPausedLineAndColumnAfterRestart();
-                      pausedLineAndColumn !== null &&
-                      ((pausedLineAndColumn.lineNumber < breakpoint2Response.actualLocation.lineNumber) || ( pausedLineAndColumn.lineNumber === breakpoint2Response.actualLocation.lineNumber && pausedLineAndColumn.columnNumber < (breakpoint2Response.actualLocation.columnNumber || 0)));
-                      pausedLineAndColumn = this.getPausedLineAndColumnAfterRestart()
-                    ){
-                      await currentDebuggerModel.agent.invoke_resume({terminateOnResume: false});
-                    }
-
-                    await currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpoint1Response.breakpointId});
-                    await currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpoint2Response.breakpointId});
 
                     return true;
                   }
@@ -1251,39 +1239,27 @@ export class SourcesPanel extends UI.Panel.Panel implements
             }
           }
 
-          const {
-            breakpointId: breakpointId1,
-          } = await currentDebuggerModel.agent.invoke_setBreakpoint(breakpointRequest1);
+          const breakpoint1Response = await currentDebuggerModel.agent.invoke_setBreakpoint(breakpointRequest1);
 
-          const {
-            breakpointId: breakpointId2,
-          } = await currentDebuggerModel.agent.invoke_setBreakpoint(breakpointRequest2);
-
-          await currentDebuggerModel.agent.invoke_restartFrame({
-            callFrameId,
-            mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
-          });
+          const breakpoint2Response = await currentDebuggerModel.agent.invoke_setBreakpoint(breakpointRequest2);
 
           if (isSecondLine) {
-            // 현재 await하면 resumed 되므로, 비동기 작동을 위해 await하지 않음
-            void currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpointId1});
+            await currentDebuggerModel.agent.invoke_restartFrame({
+              callFrameId,
+              mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
+            });
+
+            void currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpoint1Response.breakpointId});
 
             return true;
           }
 
-          await currentDebuggerModel.agent.invoke_resume({terminateOnResume: false});
-
-          for (
-            let pausedLineAndColumn = this.getPausedLineAndColumnAfterRestart();
-            pausedLineAndColumn !== null &&
-            ((pausedLineAndColumn.lineNumber < breakpointRequest2.location.lineNumber) || ( pausedLineAndColumn.lineNumber === breakpointRequest2.location.lineNumber && pausedLineAndColumn.columnNumber < (breakpointRequest2.location.columnNumber || 0)));
-            pausedLineAndColumn = this.getPausedLineAndColumnAfterRestart()
-          ){
-            await currentDebuggerModel.agent.invoke_resume({terminateOnResume: false});
-          }
-
-          await currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpointId1});
-          await currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpointId2});
+          await this.continueToPausedOnPrevBreakpointAndRemove({
+            debuggerModel: currentDebuggerModel,
+            callFrameId,
+            breakpoint1Response,
+            breakpoint2Response
+          });
         }
       }
     }
@@ -1418,6 +1394,37 @@ export class SourcesPanel extends UI.Panel.Panel implements
       reachableIndexInFuncScope,
       reachableBreackpointInFunction
     };
+  }
+
+  async continueToPausedOnPrevBreakpointAndRemove({
+    debuggerModel,
+    callFrameId,
+    breakpoint1Response,
+    breakpoint2Response
+  }:{
+    debuggerModel: SDK.DebuggerModel.DebuggerModel,
+    callFrameId: Protocol.Debugger.CallFrameId,
+    breakpoint1Response: Protocol.Debugger.SetBreakpointResponse,
+    breakpoint2Response: Protocol.Debugger.SetBreakpointResponse,
+  }) :Promise<void> {
+    await debuggerModel.agent.invoke_restartFrame({
+      callFrameId,
+      mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
+    });
+
+    await debuggerModel.agent.invoke_resume({terminateOnResume: false});
+
+    for (
+      let pausedLineAndColumn = this.getPausedLineAndColumnAfterRestart();
+      pausedLineAndColumn !== null &&
+      ((pausedLineAndColumn.lineNumber < breakpoint2Response.actualLocation.lineNumber) || ( pausedLineAndColumn.lineNumber === breakpoint2Response.actualLocation.lineNumber && pausedLineAndColumn.columnNumber < (breakpoint2Response.actualLocation.columnNumber || 0)));
+      pausedLineAndColumn = this.getPausedLineAndColumnAfterRestart()
+    ){
+      await debuggerModel.agent.invoke_resume({terminateOnResume: false});
+    }
+
+    await debuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpoint1Response.breakpointId});
+    await debuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpoint2Response.breakpointId});
   }
 
   private async continueToLocation(uiLocation: Workspace.UISourceCode.UILocation): Promise<void> {
