@@ -899,58 +899,41 @@ export class SourcesPanel extends UI.Panel.Panel implements
       restrictToFunction: true
     });
 
-    let prevBreakpointInCallFrame = {
-      lineNumber: possibleBreakpointsInCallFrame[0].lineNumber,
-      columnNumber: possibleBreakpointsInCallFrame[0].columnNumber || 0
-    };
-    let beforePrevBreakpointInCallFrame = {
-      lineNumber: possibleBreakpointsInCallFrame[0].lineNumber,
-      columnNumber: possibleBreakpointsInCallFrame[0].columnNumber || 0
-    };
-
-    let isSecondLine: boolean = false;
-
     const orderFromCallFrame = this.getOrderFromCurrnetScope({
       currentLineNumber,
       currentColumnNumber,
       breakPointsInCurrentScope: possibleBreakpointsInCallFrame,
     });
 
+    const {
+      reachableIndexInCallFrame: prevReachableIndexInCallFrame,
+      reachableBreackpointInCallFrame: prevReachableBreackpointInCallFrame
+    } = await this.getClosestReachableBreakpoint({
+      startingPoint: orderFromCallFrame,
+      possibleBreakpointsInCallFrame,
+      callFrameId,
+      callFrameFunctionName: topCallFrame.functionName,
+      debuggerModel: currentDebuggerModel,
+      lineNumberOfFunctionLocation: lineNumberOfFunction
+    });
+
+    const prevBreakpointInCallFrame = prevReachableBreackpointInCallFrame;
+
+    const {
+      reachableBreackpointInCallFrame: beforePrevReachableBreackpointInCallFrame
+    } = await this.getClosestReachableBreakpoint({
+      startingPoint: prevReachableIndexInCallFrame,
+      possibleBreakpointsInCallFrame,
+      callFrameId,
+      callFrameFunctionName: topCallFrame.functionName,
+      debuggerModel: currentDebuggerModel,
+      lineNumberOfFunctionLocation: lineNumberOfFunction
+    });
+
+    const beforePrevBreakpointInCallFrame = beforePrevReachableBreackpointInCallFrame;
+
     if (orderFromCallFrame === 0) {
       return true;
-    }
-
-    if (orderFromCallFrame === 1) {
-      isSecondLine = true;
-    }
-
-    if (orderFromCallFrame > 1) {
-      const {
-        reachableIndexInCallFrame: prevReachableIndexInCallFrame,
-        reachableBreackpointInCallFrame: prevReachableBreackpointInCallFrame
-      } = await this.getClosestReachableBreakpoint({
-        startingPoint: orderFromCallFrame,
-        possibleBreakpointsInCallFrame,
-        callFrameId,
-        callFrameFunctionName: topCallFrame.functionName,
-        debuggerModel: currentDebuggerModel,
-        lineNumberOfFunctionLocation: lineNumberOfFunction
-      });
-
-      prevBreakpointInCallFrame = prevReachableBreackpointInCallFrame;
-
-      const {
-        reachableBreackpointInCallFrame: beforePrevReachableBreackpointInCallFrame
-      } = await this.getClosestReachableBreakpoint({
-        startingPoint: prevReachableIndexInCallFrame,
-        possibleBreakpointsInCallFrame,
-        callFrameId,
-        callFrameFunctionName: topCallFrame.functionName,
-        debuggerModel: currentDebuggerModel,
-        lineNumberOfFunctionLocation: lineNumberOfFunction
-      });
-
-      beforePrevBreakpointInCallFrame = beforePrevReachableBreackpointInCallFrame;
     }
 
     const scopeChains = topCallFrame.payload.scopeChain;
@@ -1186,7 +1169,8 @@ export class SourcesPanel extends UI.Panel.Panel implements
 
     const breakpoint2Response = await currentDebuggerModel.agent.invoke_setBreakpoint(breakpointRequest2);
 
-    if (isSecondLine) {
+    const isInSecondBreakpointFromCallFrame = orderFromCallFrame === 1;
+    if (isInSecondBreakpointFromCallFrame) {
       await currentDebuggerModel.agent.invoke_restartFrame({
         callFrameId,
         mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
