@@ -859,6 +859,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
 
     const details = checkedIsPaused.details;
     const currentDebuggerModel = checkedIsPaused.debuggerModel;
+    const runtimeModel = currentDebuggerModel.runtimeModel();
 
     const topCallFrame = details.callFrames[0];
 
@@ -868,7 +869,8 @@ export class SourcesPanel extends UI.Panel.Panel implements
 
     const {
       payload: {
-        callFrameId
+        callFrameId,
+        scopeChain
       },
       script: {
         scriptId
@@ -936,8 +938,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
       return true;
     }
 
-    const scopeChains = topCallFrame.payload.scopeChain;
-    const blockScopes = scopeChains.filter(scope => {
+    const blockScopes = scopeChain.filter(scope => {
       if (scope.type === 'block') {
         return true;
       }
@@ -947,16 +948,14 @@ export class SourcesPanel extends UI.Panel.Panel implements
     const currentBlockScope = blockScopes[0];
     const parentBlockScope = blockScopes[1];
 
-    const runtimeModel = currentDebuggerModel.runtimeModel();
-
-    let breakpointRequest1: Protocol.Debugger.SetBreakpointRequest = {
+    const defaultBreakpointRequest1: Protocol.Debugger.SetBreakpointRequest = {
       location: {
         scriptId,
         ...prevBreakpointInCallFrame
       },
       condition: defaultCondition,
     };
-    let breakpointRequest2: Protocol.Debugger.SetBreakpointRequest = {
+    const defaultBreakpointRequest2: Protocol.Debugger.SetBreakpointRequest = {
       location: {
         scriptId,
         ...beforePrevBreakpointInCallFrame
@@ -1082,48 +1081,74 @@ export class SourcesPanel extends UI.Panel.Panel implements
         });
       }
 
-      if (breakPointsInHeadRange.length === 3) {
-        const initializationPart = breakPointsInHeadRange[0];
-        const conditionPart = breakPointsInHeadRange[1];
+      const initializationPart = breakPointsInHeadRange[0];
+      const conditionPart = breakPointsInHeadRange[1];
 
-        const {object: {
-          objectId : parentScopeObjectId
-        }} = parentBlockScope;
+      const {object: {
+        objectId : parentScopeObjectId
+      }} = parentBlockScope;
 
-        if (parentScopeObjectId) {
-          const response = await runtimeModel.agent.invoke_getProperties({
-            objectId: parentScopeObjectId,
-            ownProperties: true
-          });
-          if (response.result[0].value && response.result[0].value.type === 'number') {
-            const key = response.result[0].name;
-            const value = response.result[0].value.value;
-            const condition = `${key} === ${value}`;
+      if (parentScopeObjectId) {
+        const response = await runtimeModel.agent.invoke_getProperties({
+          objectId: parentScopeObjectId,
+          ownProperties: true
+        });
+        if (response.result[0].value && response.result[0].value.type === 'number') {
+          const key = response.result[0].name;
+          const value = response.result[0].value.value;
+          const condition = `${key} === ${value}`;
 
-            if (orderFromCurrnetBlockScope === 1) {
-              breakpointRequest1 = {
-                location: {
-                  scriptId,
-                  ...prevBreakpointInCallFrame
-                },
-                condition: `${breakpointRequest1.condition} && ${condition}`
-              };
-              breakpointRequest2 = {
-                location: {...conditionPart},
-                condition: `${breakpointRequest2.condition} && ${condition}`
-              };
-            }
+          if (orderFromCurrnetBlockScope === 1) {
+            const secondInForLoopBodyBreakpointRequest1 = {
+              location: {
+                scriptId,
+                ...prevBreakpointInCallFrame
+              },
+              condition: `${defaultBreakpointRequest1.condition} && ${condition}`
+            };
+            const secondInForLoopBodyBreakpointRequest2 = {
+              location: {...conditionPart},
+              condition: `${defaultBreakpointRequest2.condition} && ${condition}`
+            };
+            const breakpointResponses = await this.setSeparatedBreakpoints({
+              breakpointRequest1: secondInForLoopBodyBreakpointRequest1,
+              breakpointRequest2: secondInForLoopBodyBreakpointRequest2,
+              debuggerModel: currentDebuggerModel,
+            });
 
-            if (orderFromCurrnetBlockScope === 0) {
-              breakpointRequest1 = {
-                location: {...conditionPart},
-                condition: `${breakpointRequest1.condition} && ${condition}`
-              };
-              breakpointRequest2 = {
-                location: {...initializationPart},
-                condition: `${breakpointRequest2.condition}`
-              };
-            }
+            await this.continueToPausedOnPrevBreakpointAndRemove({
+              debuggerModel: currentDebuggerModel,
+              callFrameId,
+              breakpoint1Response: breakpointResponses.breakpointResponse1,
+              breakpoint2Response: breakpointResponses.breakpointResponse2
+            });
+
+            return true;
+          }
+
+          if (orderFromCurrnetBlockScope === 0) {
+            const firstInForLoopBodyBreakpointRequest1 = {
+              location: {...conditionPart},
+              condition: `${defaultBreakpointRequest1.condition} && ${condition}`
+            };
+            const firstInForLoopBodyBreakpointRequest2 = {
+              location: {...initializationPart},
+              condition: `${defaultBreakpointRequest2.condition}`
+            };
+            const breakpointResponses = await this.setSeparatedBreakpoints({
+              breakpointRequest1: firstInForLoopBodyBreakpointRequest1,
+              breakpointRequest2: firstInForLoopBodyBreakpointRequest2,
+              debuggerModel: currentDebuggerModel,
+            });
+
+            await this.continueToPausedOnPrevBreakpointAndRemove({
+              debuggerModel: currentDebuggerModel,
+              callFrameId,
+              breakpoint1Response: breakpointResponses.breakpointResponse1,
+              breakpoint2Response: breakpointResponses.breakpointResponse2
+            });
+
+            return true;
           }
         }
       }
@@ -1147,27 +1172,46 @@ export class SourcesPanel extends UI.Panel.Panel implements
           const key = response.result[0].name;
           const value = response.result[0].value.value;
           const condition = `${key} === ${value}`;
-          breakpointRequest1 = {
+
+          const thirdAndMoreInForLoopBodyBreakpointRequest1 = {
             location: {
               scriptId,
               ...prevBreakpointInCallFrame
             },
-            condition: `${breakpointRequest1.condition} && ${condition}`
+            condition: `${defaultBreakpointRequest1.condition} && ${condition}`
           };
-          breakpointRequest2 = {
+
+          const thirdAndMoreInForLoopBodyBreakpointRequest2 = {
             location: {
               scriptId,
               ...beforePrevBreakpointInCallFrame
             },
-            condition: `${breakpointRequest2.condition} && ${condition}`
+            condition: `${defaultBreakpointRequest2.condition} && ${condition}`
           };
+
+          const breakpointResponses = await this.setSeparatedBreakpoints({
+            breakpointRequest1: thirdAndMoreInForLoopBodyBreakpointRequest1,
+            breakpointRequest2: thirdAndMoreInForLoopBodyBreakpointRequest2,
+            debuggerModel: currentDebuggerModel,
+          });
+
+          await this.continueToPausedOnPrevBreakpointAndRemove({
+            debuggerModel: currentDebuggerModel,
+            callFrameId,
+            breakpoint1Response: breakpointResponses.breakpointResponse1,
+            breakpoint2Response: breakpointResponses.breakpointResponse2
+          });
+
+          return true;
         }
       }
     }
 
-    const breakpoint1Response = await currentDebuggerModel.agent.invoke_setBreakpoint(breakpointRequest1);
-
-    const breakpoint2Response = await currentDebuggerModel.agent.invoke_setBreakpoint(breakpointRequest2);
+    const defaultBreakpointResponses = await this.setSeparatedBreakpoints({
+      breakpointRequest1: defaultBreakpointRequest1,
+      breakpointRequest2: defaultBreakpointRequest2,
+      debuggerModel: currentDebuggerModel,
+    });
 
     const isInSecondBreakpointFromCallFrame = orderFromCallFrame === 1;
     if (isInSecondBreakpointFromCallFrame) {
@@ -1176,7 +1220,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
         mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
       });
 
-      void currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpoint1Response.breakpointId});
+      void currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: defaultBreakpointResponses.breakpointResponse1.breakpointId});
 
       return true;
     }
@@ -1184,8 +1228,8 @@ export class SourcesPanel extends UI.Panel.Panel implements
     await this.continueToPausedOnPrevBreakpointAndRemove({
       debuggerModel: currentDebuggerModel,
       callFrameId,
-      breakpoint1Response,
-      breakpoint2Response
+      breakpoint1Response: defaultBreakpointResponses.breakpointResponse1,
+      breakpoint2Response: defaultBreakpointResponses.breakpointResponse2,
     });
 
     return true;
@@ -1430,6 +1474,27 @@ export class SourcesPanel extends UI.Panel.Panel implements
       result: true,
       currentPartIndex,
       parts
+    };
+  }
+
+  async setSeparatedBreakpoints({
+    breakpointRequest1,
+    breakpointRequest2,
+    debuggerModel,
+  }:{
+    breakpointRequest1: Protocol.Debugger.SetBreakpointRequest,
+    breakpointRequest2: Protocol.Debugger.SetBreakpointRequest,
+    debuggerModel: SDK.DebuggerModel.DebuggerModel,
+  }):Promise<{
+    breakpointResponse1: Protocol.Debugger.SetBreakpointResponse,
+    breakpointResponse2: Protocol.Debugger.SetBreakpointResponse,
+   }> {
+    const breakpointResponse1 = await debuggerModel.agent.invoke_setBreakpoint(breakpointRequest1);
+    const breakpointResponse2 = await debuggerModel.agent.invoke_setBreakpoint(breakpointRequest2);
+
+    return {
+      breakpointResponse1,
+      breakpointResponse2
     };
   }
 
