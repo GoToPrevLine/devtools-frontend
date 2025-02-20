@@ -862,14 +862,10 @@ export class SourcesPanel extends UI.Panel.Panel implements
       const { scriptId } = topCallFrame.script;
       const { lineNumber: currentLineNumber, columnNumber: currentColumnNumber } = topCallFrame.location();
 
-      const response = await currentDebuggerModel.agent.invoke_evaluateOnCallFrame({
+      const defaultCondition = await this.makeDefaultCondition({
+        debuggerModel: currentDebuggerModel,
         callFrameId,
-        expression: String.raw`JSON.stringify([...arguments].map((arg) => typeof arg === 'function' ? arg.name : arg))`,
-        returnByValue: true,
       });
-      const argumentsJSON: string = response.result.value;
-
-      const defaultCondition = String.raw`JSON.stringify([...arguments].map((arg) => typeof arg === 'function' ? arg.name : arg)) === '${argumentsJSON}'`;
 
       if (topCallFrame.payload.functionLocation) {
         const {
@@ -1425,6 +1421,23 @@ export class SourcesPanel extends UI.Panel.Panel implements
 
     await debuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpoint1Response.breakpointId});
     await debuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpoint2Response.breakpointId});
+  }
+
+  async makeDefaultCondition({
+    debuggerModel,
+    callFrameId,
+  }:{
+    debuggerModel: SDK.DebuggerModel.DebuggerModel,
+    callFrameId: Protocol.Debugger.CallFrameId,
+  }): Promise<string> {
+    const response = await debuggerModel.agent.invoke_evaluateOnCallFrame({
+      callFrameId,
+      expression: String.raw`JSON.stringify([...arguments].map((arg) => typeof arg === 'function' ? arg.name : arg))`,
+      returnByValue: true,
+    });
+    const argumentsJSON: string = response.result.value;
+
+    return String.raw`JSON.stringify([...arguments].map((arg) => typeof arg === 'function' ? arg.name : arg)) === '${argumentsJSON}'`;
   }
 
   private async continueToLocation(uiLocation: Workspace.UISourceCode.UILocation): Promise<void> {
