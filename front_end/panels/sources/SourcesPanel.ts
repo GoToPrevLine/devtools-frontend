@@ -938,15 +938,8 @@ export class SourcesPanel extends UI.Panel.Panel implements
       return true;
     }
 
-    const blockScopes = scopeChain.filter(scope => {
-      if (scope.type === 'block') {
-        return true;
-      }
-      return false;
-    });
-
-    const currentBlockScope = blockScopes[0];
-    const parentBlockScope = blockScopes[1];
+    const currentBlockScope = scopeChain[0].type === 'block' ? scopeChain[0] : null;
+    const parentBlockScope = scopeChain[1].type === 'block' ? scopeChain[1] : null;
 
     const defaultBreakpointRequest1: Protocol.Debugger.SetBreakpointRequest = {
       location: {
@@ -1008,29 +1001,33 @@ export class SourcesPanel extends UI.Panel.Panel implements
               const value = response.result[0].value.value;
               const afterthoughtCondition = `${key} === ${value}`;
 
-              const breakpoint1Response = await currentDebuggerModel.agent.invoke_setBreakpoint({
+              const afterthoughtInForLoopHeadBreakpointRequest1 = {
                 location: {
                   scriptId,
                   lineNumber: breakPointsInCurrentBlockScope[breakPointsInCurrentBlockScope.length - 1].lineNumber,
                   columnNumber: breakPointsInCurrentBlockScope[breakPointsInCurrentBlockScope.length - 1].columnNumber,
                 },
                 condition: `${defaultCondition} && ${afterthoughtCondition}`
-              });
-
-              const breakpoint2Response = await currentDebuggerModel.agent.invoke_setBreakpoint({
+              };
+              const afterthoughtInForLoopHeadBreakpointRequest2 = {
                 location: {
                   scriptId,
                   lineNumber: breakPointsInCurrentBlockScope[breakPointsInCurrentBlockScope.length - 2].lineNumber,
                   columnNumber: breakPointsInCurrentBlockScope[breakPointsInCurrentBlockScope.length - 2].columnNumber,
                 },
                 condition: `${defaultCondition} && ${afterthoughtCondition}`
+              };
+              const breakpointRespones = await this.setSeparatedBreakpoints({
+                breakpointRequest1: afterthoughtInForLoopHeadBreakpointRequest1,
+                breakpointRequest2: afterthoughtInForLoopHeadBreakpointRequest2,
+                debuggerModel: currentDebuggerModel,
               });
 
               await this.continueToPausedOnPrevBreakpointAndRemove({
                 debuggerModel: currentDebuggerModel,
                 callFrameId,
-                breakpoint1Response,
-                breakpoint2Response
+                breakpoint1Response: breakpointRespones.breakpointResponse1,
+                breakpoint2Response: breakpointRespones.breakpointResponse2,
               });
 
               return true;
