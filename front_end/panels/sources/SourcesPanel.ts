@@ -1370,14 +1370,23 @@ export class SourcesPanel extends UI.Panel.Panel implements
         columnNumber: possibleBreakpointsInCallFrame[reachableIndexInCallFrame].columnNumber || 0
       };
 
-      const funcSource = await this.getFuncSourceString({
+      let funcSource = await this.getFuncSourceString({
         callFrames,
         runtimeModel: debuggerModel.runtimeModel(),
         runningFunctionName: callFrameFunctionName
       });
 
       if (!funcSource) {
-        break;
+        const funcSourceDefinedInScriptResponse = await debuggerModel.agent.invoke_evaluateOnCallFrame({
+          callFrameId,
+          expression:`${callFrameFunctionName}.toString()`,
+          returnByValue: true,
+        });
+        funcSource = funcSourceDefinedInScriptResponse.result.value;
+
+        if (!funcSource) {
+          break;
+        }
       }
 
       const funcLineList = funcSource.split(/[\n]/g);
