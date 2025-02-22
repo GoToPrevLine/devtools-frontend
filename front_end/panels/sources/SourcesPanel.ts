@@ -916,7 +916,8 @@ export class SourcesPanel extends UI.Panel.Panel implements
       callFrameId,
       callFrameFunctionName: topCallFrame.functionName,
       debuggerModel: currentDebuggerModel,
-      lineNumberOfFunctionLocation: lineNumberOfFunction
+      lineNumberOfFunctionLocation: lineNumberOfFunction,
+      callFrames: details.callFrames,
     });
 
     const prevBreakpointInCallFrame = prevReachableBreackpointInCallFrame;
@@ -929,7 +930,8 @@ export class SourcesPanel extends UI.Panel.Panel implements
       callFrameId,
       callFrameFunctionName: topCallFrame.functionName,
       debuggerModel: currentDebuggerModel,
-      lineNumberOfFunctionLocation: lineNumberOfFunction
+      lineNumberOfFunctionLocation: lineNumberOfFunction,
+      callFrames: details.callFrames,
     });
 
     const beforePrevBreakpointInCallFrame = beforePrevReachableBreackpointInCallFrame;
@@ -1301,13 +1303,51 @@ export class SourcesPanel extends UI.Panel.Panel implements
     return breakPointsInCurrentBlockScope;
   }
 
+  async getFuncSourceString({
+    callFrames,
+    runtimeModel,
+    runningFunctionName,
+  }:{
+    callFrames: SDK.DebuggerModel.CallFrame[],
+    runtimeModel: SDK.RuntimeModel.RuntimeModel,
+    runningFunctionName: string,
+  }): Promise<string|null> {
+    const upperCallFrame = callFrames[1];
+    if (!upperCallFrame) {
+      return null;
+    }
+
+    const upperScopeObjectId = upperCallFrame.payload.scopeChain[0].object.objectId;
+    if(!upperScopeObjectId) {
+      return null;
+    }
+
+    const upperPropertiesResponse = await runtimeModel.agent.invoke_getProperties({
+      objectId: upperScopeObjectId,
+    });
+    const runningFunctionData = upperPropertiesResponse.result.find(property => property.name === runningFunctionName);
+    if (!runningFunctionData) {
+      return null;
+    }
+
+    if (!runningFunctionData.value) {
+      return null;
+    }
+    if (!runningFunctionData.value.description) {
+      return null;
+    }
+
+    return runningFunctionData.value.description;
+  }
+
   async getClosestReachableBreakpoint({
     startingPoint,
     possibleBreakpointsInCallFrame,
     callFrameId,
     callFrameFunctionName,
     debuggerModel,
-    lineNumberOfFunctionLocation
+    lineNumberOfFunctionLocation,
+    callFrames
   } : {
     startingPoint: number,
     possibleBreakpointsInCallFrame: Protocol.Debugger.BreakLocation[],
@@ -1315,6 +1355,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
     callFrameFunctionName: string,
     debuggerModel: SDK.DebuggerModel.DebuggerModel,
     lineNumberOfFunctionLocation: number,
+    callFrames: SDK.DebuggerModel.CallFrame[],
   }): Promise<{reachableIndexInCallFrame: number, reachableBreackpointInCallFrame: {lineNumber: number, columnNumber: number}}> {
     let reachable = false;
     let reachableIndexInCallFrame = startingPoint - 1;
@@ -1329,12 +1370,15 @@ export class SourcesPanel extends UI.Panel.Panel implements
         columnNumber: possibleBreakpointsInCallFrame[reachableIndexInCallFrame].columnNumber || 0
       };
 
-      const funcSourceResponse = await debuggerModel.agent.invoke_evaluateOnCallFrame({
-        callFrameId,
-        expression:`${callFrameFunctionName}.toString()`,
-        returnByValue: true,
+      const funcSource = await this.getFuncSourceString({
+        callFrames,
+        runtimeModel: debuggerModel.runtimeModel(),
+        runningFunctionName: callFrameFunctionName
       });
-      const funcSource:string = funcSourceResponse.result.value;
+
+      if (!funcSource) {
+        break;
+      }
 
       const funcLineList = funcSource.split(/[\n]/g);
       const injectedFuncLineList = funcLineList.map((lineSource, index) => {
