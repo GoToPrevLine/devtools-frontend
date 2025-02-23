@@ -1041,6 +1041,16 @@ export class SourcesPanel extends UI.Panel.Panel implements
 
               return true;
             }
+          } else if (checkedIsInForLoopHead.currentPartIndex === 1) {
+            const initialCounter = await this.findInitialCounter({
+              scriptId,
+              checkedIsInForLoopHead,
+              defaultCondition,
+              currentDebuggerModel,
+              callFrameId
+            });
+
+            return true;
           }
         }
       }
@@ -1587,6 +1597,68 @@ export class SourcesPanel extends UI.Panel.Panel implements
   }
   getBackDoUpdatedLoopCounter(): BackDoLoopCounter|undefined {
     return this.backDoUpdatedLoopCounter;
+  }
+
+  async findInitialCounter({
+    scriptId,
+    checkedIsInForLoopHead,
+    defaultCondition,
+    currentDebuggerModel,
+    callFrameId
+  }: {
+    scriptId: Protocol.Runtime.ScriptId,
+    checkedIsInForLoopHead: {result: true, parts: Protocol.Debugger.BreakLocation[], currentPartIndex: number},
+    defaultCondition: string,
+    currentDebuggerModel: SDK.DebuggerModel.DebuggerModel,
+    callFrameId: Protocol.Debugger.CallFrameId,
+  }): Promise<{name: string, value: number}|null> {
+    const BreakpointRequest1 = {
+      location: {
+        scriptId,
+        lineNumber: checkedIsInForLoopHead.parts[1].lineNumber,
+        columnNumber: checkedIsInForLoopHead.parts[1].columnNumber,
+      },
+      condition: defaultCondition
+    };
+    const BreakpointRequest2 = {
+      location: {
+        scriptId,
+        lineNumber: checkedIsInForLoopHead.parts[0].lineNumber,
+        columnNumber: checkedIsInForLoopHead.parts[0].columnNumber,
+      },
+      condition: defaultCondition
+    };
+    const breakpointRespones = await this.setSeparatedBreakpoints({
+      breakpointRequest1: BreakpointRequest1,
+      breakpointRequest2: BreakpointRequest2,
+      debuggerModel: currentDebuggerModel,
+    });
+
+    await this.continueToPausedOnPrevBreakpointAndRemove({
+      debuggerModel: currentDebuggerModel,
+      callFrameId,
+      breakpoint1Response: breakpointRespones.breakpointResponse1,
+      breakpoint2Response: breakpointRespones.breakpointResponse2,
+    });
+
+    const checkedIsPaused = this.checkPaused();
+
+    if (!checkedIsPaused.result) {
+      return null;
+    }
+    const initialObjectId = checkedIsPaused.details.callFrames[0].payload.scopeChain[0].object.objectId;
+    if (!initialObjectId) {
+      return null;
+    }
+    const initialResponse = await checkedIsPaused.debuggerModel.runtimeModel().agent.invoke_getProperties({
+      objectId: initialObjectId,
+      ownProperties: true,
+    });
+    const initialCounter = {
+      name: initialResponse.result[0].name,
+      value: initialResponse.result[0].value?.value as number,
+    };
+    return initialCounter;
   }
 
   private async continueToLocation(uiLocation: Workspace.UISourceCode.UILocation): Promise<void> {
