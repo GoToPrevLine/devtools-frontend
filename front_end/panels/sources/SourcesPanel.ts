@@ -173,6 +173,11 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 const primitiveRemoteObjectTypes = new Set(['number', 'boolean', 'bigint', 'undefined']);
 let sourcesPanelInstance: SourcesPanel;
 
+interface BackDoLoopCounter {
+  name: string;
+  value: number;
+}
+
 export class SourcesPanel extends UI.Panel.Panel implements
     UI.ContextMenu.Provider<Workspace.UISourceCode.UISourceCode|Workspace.UISourceCode.UILocation|
                             SDK.RemoteObject.RemoteObject|SDK.NetworkRequest.NetworkRequest|UISourceCodeFrame>,
@@ -208,7 +213,9 @@ export class SourcesPanel extends UI.Panel.Panel implements
   private tabbedLocationHeader?: Element|null;
   private extensionSidebarPanesContainer?: UI.View.ViewLocation;
   sidebarPaneView?: UI.Widget.VBox|UI.SplitWidget.SplitWidget;
-
+  private backDoTriggeredLoopCounter?: BackDoLoopCounter;
+  private backDoUpdatedLoopCounter?: BackDoLoopCounter;
+  private backDoInitialLoopCounter?: BackDoLoopCounter;
   #lastPausedTarget: WeakRef<SDK.Target.Target>|null = null;
 
   constructor() {
@@ -1557,6 +1564,29 @@ export class SourcesPanel extends UI.Panel.Panel implements
       return {result: true, details, debuggerModel: currentDebuggerModel};
     }
     return {result: false};
+  }
+
+  setBackDoInitialLoopCounter(newValue: BackDoLoopCounter): BackDoLoopCounter {
+    this.backDoInitialLoopCounter = newValue;
+    return this.backDoInitialLoopCounter;
+  }
+  setBackDoTriggeredLoopCounter(newValue: BackDoLoopCounter): BackDoLoopCounter {
+    this.backDoTriggeredLoopCounter = newValue;
+    return this.backDoTriggeredLoopCounter;
+  }
+  setBackDoUpdatedLoopCounter(newValue: BackDoLoopCounter): BackDoLoopCounter {
+    this.backDoUpdatedLoopCounter = newValue;
+    return this.backDoUpdatedLoopCounter;
+  }
+
+  getBackDoInitialLoopCounter(): BackDoLoopCounter|undefined {
+    return this.backDoInitialLoopCounter ;
+  }
+  getBackDoTriggeredLoopCounter(): BackDoLoopCounter|undefined {
+    return this.backDoTriggeredLoopCounter;
+  }
+  getBackDoUpdatedLoopCounter(): BackDoLoopCounter|undefined {
+    return this.backDoUpdatedLoopCounter;
   }
 
   private async continueToLocation(uiLocation: Workspace.UISourceCode.UILocation): Promise<void> {
