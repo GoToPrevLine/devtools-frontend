@@ -1068,6 +1068,30 @@ export class SourcesPanel extends UI.Panel.Panel implements
                 currentDebuggerModel,
                 callFrameId,
               });
+
+              const breakpointRequest1 = {
+                location: checkedIsInForLoopHead.parts[2],
+                condition: `${defaultCondition} && ${targetCounter.name} === ${targetCounter.value}`
+              };
+              const breakpointRequest2 = {
+                location: checkedIsInForLoopHead.parts[1],
+                condition: `${defaultCondition} && ${targetCounter.name} === ${targetCounter.value}`
+              };
+
+              const breakpointRespones = await this.setSeparatedBreakpoints({
+                breakpointRequest1,
+                breakpointRequest2,
+                debuggerModel: currentDebuggerModel,
+              });
+
+              await this.continueToPausedOnPrevBreakpointAndRemove({
+                debuggerModel: currentDebuggerModel,
+                callFrameId,
+                breakpoint1Response: breakpointRespones.breakpointResponse1,
+                breakpoint2Response: breakpointRespones.breakpointResponse2,
+              });
+
+              return true;
             }
 
             return true;
