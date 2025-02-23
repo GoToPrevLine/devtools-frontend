@@ -1042,6 +1042,11 @@ export class SourcesPanel extends UI.Panel.Panel implements
               return true;
             }
           } else if (checkedIsInForLoopHead.currentPartIndex === 1) {
+            const triggeredCounter = await this.getTriggeredCounter({
+              currentBlockScopeObjectId,
+              runtimeModel
+            });
+
             const initialCounter = await this.findInitialCounter({
               scriptId,
               checkedIsInForLoopHead,
@@ -1659,6 +1664,26 @@ export class SourcesPanel extends UI.Panel.Panel implements
       value: initialResponse.result[0].value?.value as number,
     };
     return initialCounter;
+  }
+
+  async getTriggeredCounter({
+    currentBlockScopeObjectId,
+    runtimeModel
+  }: {
+    currentBlockScopeObjectId: Protocol.Runtime.RemoteObjectId,
+    runtimeModel: SDK.RuntimeModel.RuntimeModel,
+  }): Promise<{name: string, value: number}> {
+    const triggeredResponse = await runtimeModel.agent.invoke_getProperties({
+      objectId: currentBlockScopeObjectId,
+      ownProperties: true
+    });
+
+    const triggeredCounter = {
+      name: triggeredResponse.result[0].name,
+      value: triggeredResponse.result[0].value?.value as number,
+    };
+
+    return triggeredCounter;
   }
 
   private async continueToLocation(uiLocation: Workspace.UISourceCode.UILocation): Promise<void> {
