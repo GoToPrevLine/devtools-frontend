@@ -1054,6 +1054,21 @@ export class SourcesPanel extends UI.Panel.Panel implements
               currentDebuggerModel,
               callFrameId
             });
+            if (!initialCounter) {
+              return true;
+            }
+
+            if (triggeredCounter.value !== initialCounter.value) {
+              const targetCounter = await this.findTargetCounter({
+                scriptId,
+                conditionPartLineNumber: checkedIsInForLoopHead.parts[1].lineNumber,
+                conditionPartColumnNumber: checkedIsInForLoopHead.parts[1].columnNumber as number,
+                initialCounter,
+                triggeredCounter,
+                currentDebuggerModel,
+                callFrameId,
+              });
+            }
 
             return true;
           }
@@ -1684,6 +1699,51 @@ export class SourcesPanel extends UI.Panel.Panel implements
     };
 
     return triggeredCounter;
+  }
+
+  async findTargetCounter({
+    scriptId,
+    conditionPartLineNumber,
+    conditionPartColumnNumber,
+    initialCounter,
+    triggeredCounter,
+    currentDebuggerModel,
+    callFrameId,
+  }: {
+    scriptId: Protocol.Runtime.ScriptId,
+    conditionPartLineNumber: number,
+    conditionPartColumnNumber: number,
+    initialCounter: {name: string, value: number},
+    triggeredCounter: {name: string, value: number},
+    currentDebuggerModel: SDK.DebuggerModel.DebuggerModel,
+    callFrameId: Protocol.Debugger.CallFrameId,
+  }): Promise<{name: string, value: number}> {
+    const location = {
+      scriptId,
+      lineNumber: conditionPartLineNumber,
+      columnNumber: conditionPartColumnNumber,
+    };
+
+    const updatedCounters = [initialCounter.value];
+
+    while (updatedCounters[updatedCounters.length - 1] !== triggeredCounter.value) {
+      await currentDebuggerModel.agent.invoke_continueToLocation({location});
+
+      const response = await currentDebuggerModel.agent.invoke_evaluateOnCallFrame({
+        callFrameId,
+        expression: String.raw`${triggeredCounter.name}`,
+        returnByValue: true,
+      });
+
+      const updated = response.result.value;
+      updatedCounters.push(updated);
+    }
+    const targetCounter = updatedCounters[updatedCounters.length - 2];
+
+    return {
+      name: triggeredCounter.name,
+      value: targetCounter,
+    };
   }
 
   private async continueToLocation(uiLocation: Workspace.UISourceCode.UILocation): Promise<void> {
