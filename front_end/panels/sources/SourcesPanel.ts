@@ -1094,6 +1094,15 @@ export class SourcesPanel extends UI.Panel.Panel implements
               return true;
             }
 
+            await currentDebuggerModel.agent.invoke_restartFrame({
+              callFrameId,
+              mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
+            });
+
+            await currentDebuggerModel.agent.invoke_continueToLocation({
+              location: checkedIsInForLoopHead.parts[0]
+            });
+
             return true;
           }
         }
