@@ -1268,14 +1268,16 @@ export class SourcesPanel extends UI.Panel.Panel implements
       }
     }
 
-    await this.checkEntered({
-      currentDebuggerModel,
-      defaultBreakpointRequest1,
-      defaultBreakpointRequest2,
-      defaultCondition,
-      topCallFrame,
-      callFrameId,
-    });
+    if (orderFromCallFrame > 2) {
+      await this.checkEntered({
+        currentDebuggerModel,
+        defaultBreakpointRequest1,
+        defaultBreakpointRequest2,
+        defaultCondition,
+        topCallFrame,
+        callFrameId,
+      });
+    }
 
     const defaultBreakpointResponses = await this.setSeparatedBreakpoints({
       breakpointRequest1: defaultBreakpointRequest1,
