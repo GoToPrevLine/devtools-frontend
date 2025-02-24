@@ -1269,7 +1269,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
     }
 
     if (orderFromCallFrame > 2) {
-      await this.checkEntered({
+      const isEnteringTheLoop = await this.checkEntered({
         currentDebuggerModel,
         defaultBreakpointRequest1,
         defaultBreakpointRequest2,
@@ -1783,6 +1783,16 @@ export class SourcesPanel extends UI.Panel.Panel implements
       condition: defaultCondition
     });
 
+    async function clear() {
+      await currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: savePointPrev.breakpointId});
+      await currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: savePoint.breakpointId});
+
+      await currentDebuggerModel.agent.invoke_restartFrame({
+        callFrameId,
+        mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
+      });
+    }
+
     await currentDebuggerModel.agent.invoke_restartFrame({
       callFrameId,
       mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
@@ -1793,7 +1803,9 @@ export class SourcesPanel extends UI.Panel.Panel implements
     });
     const checkedTry1 = this.checkPaused();
     if(!checkedTry1.result) {
-      return true;
+      clear();
+
+      return false;
     }
 
     await currentDebuggerModel.agent.invoke_continueToLocation({
@@ -1801,36 +1813,34 @@ export class SourcesPanel extends UI.Panel.Panel implements
     });
     const checkedTry2 = this.checkPaused();
     if(!checkedTry2.result) {
-      return true;
+      clear();
+
+      return false;
     }
 
-    await currentDebuggerModel.agent.invoke_continueToLocation({
-      location: defaultBreakpointRequest2.location
-    });
-    const checkedTry3 = this.checkPaused();
-    if(!checkedTry3.result) {
-      return true;
+    const current = checkedTry2.details.callFrames[0].payload.scopeChain[0];
+    const parent = checkedTry2.details.callFrames[0].payload.scopeChain[1];
+
+    if (!parent) {
+      clear();
+
+      return false;
+    }
+    if (current.type !== 'block' || parent.type !== 'block') {
+      clear();
+
+      return false;
     }
 
-    const {
-      lineNumber: lineNumberBefore,
-      columnNumber: columnNumberBefore
-    } = checkedTry2.details.callFrames[0].payload.location;
-    const {
-      lineNumber: lineNumberAfter,
-      columnNumber: columnNumberAfter
-    } = checkedTry3.details.callFrames[0].payload.location;
-    const enterd = lineNumberBefore === lineNumberAfter && columnNumberBefore === columnNumberAfter;
+    const isLoop = (
+      current.endLocation?.lineNumber === parent.endLocation?.lineNumber &&
+      current.endLocation?.columnNumber === parent.endLocation?.columnNumber &&
+      current.startLocation?.lineNumber === parent.startLocation?.lineNumber
+    )
 
-    await currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: savePointPrev.breakpointId});
-    await currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: savePoint.breakpointId});
+    clear();
 
-    await currentDebuggerModel.agent.invoke_restartFrame({
-      callFrameId,
-      mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
-    });
-
-    return enterd;
+    return isLoop;
   }
 
   private async continueToLocation(uiLocation: Workspace.UISourceCode.UILocation): Promise<void> {
