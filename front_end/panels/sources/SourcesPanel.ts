@@ -1268,6 +1268,15 @@ export class SourcesPanel extends UI.Panel.Panel implements
       }
     }
 
+    await this.checkEntered({
+      currentDebuggerModel,
+      defaultBreakpointRequest1,
+      defaultBreakpointRequest2,
+      defaultCondition,
+      topCallFrame,
+      callFrameId,
+    });
+
     const defaultBreakpointResponses = await this.setSeparatedBreakpoints({
       breakpointRequest1: defaultBreakpointRequest1,
       breakpointRequest2: defaultBreakpointRequest2,
@@ -1746,6 +1755,80 @@ export class SourcesPanel extends UI.Panel.Panel implements
       name: triggeredCounter.name,
       value: targetCounter,
     };
+  }
+
+  async checkEntered({
+    currentDebuggerModel,
+    defaultBreakpointRequest1,
+    defaultBreakpointRequest2,
+    defaultCondition,
+    topCallFrame,
+    callFrameId,
+  }: {
+    currentDebuggerModel: SDK.DebuggerModel.DebuggerModel,
+    defaultBreakpointRequest1: Protocol.Debugger.SetBreakpointRequest,
+    defaultBreakpointRequest2: Protocol.Debugger.SetBreakpointRequest,
+    defaultCondition: string,
+    topCallFrame: SDK.DebuggerModel.CallFrame,
+    callFrameId: Protocol.Debugger.CallFrameId,
+  }): Promise<boolean> {
+    const savePointPrev = await currentDebuggerModel.agent.invoke_setBreakpoint({
+      location: defaultBreakpointRequest1.location,
+      condition: defaultCondition
+    });
+    const savePoint = await currentDebuggerModel.agent.invoke_setBreakpoint({
+      location: topCallFrame.payload.location,
+      condition: defaultCondition
+    });
+
+    await currentDebuggerModel.agent.invoke_restartFrame({
+      callFrameId,
+      mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
+    });
+
+    await currentDebuggerModel.agent.invoke_continueToLocation({
+      location: defaultBreakpointRequest2.location
+    });
+    const checkedTry1 = this.checkPaused();
+    if(!checkedTry1.result) {
+      return true;
+    }
+
+    await currentDebuggerModel.agent.invoke_continueToLocation({
+      location: defaultBreakpointRequest2.location
+    });
+    const checkedTry2 = this.checkPaused();
+    if(!checkedTry2.result) {
+      return true;
+    }
+
+    await currentDebuggerModel.agent.invoke_continueToLocation({
+      location: defaultBreakpointRequest2.location
+    });
+    const checkedTry3 = this.checkPaused();
+    if(!checkedTry3.result) {
+      return true;
+    }
+
+    const {
+      lineNumber: lineNumberBefore,
+      columnNumber: columnNumberBefore
+    } = checkedTry2.details.callFrames[0].payload.location;
+    const {
+      lineNumber: lineNumberAfter,
+      columnNumber: columnNumberAfter
+    } = checkedTry3.details.callFrames[0].payload.location;
+    const enterd = lineNumberBefore === lineNumberAfter && columnNumberBefore === columnNumberAfter;
+
+    await currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: savePointPrev.breakpointId});
+    await currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: savePoint.breakpointId});
+
+    await currentDebuggerModel.agent.invoke_restartFrame({
+      callFrameId,
+      mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
+    });
+
+    return enterd;
   }
 
   private async continueToLocation(uiLocation: Workspace.UISourceCode.UILocation): Promise<void> {
