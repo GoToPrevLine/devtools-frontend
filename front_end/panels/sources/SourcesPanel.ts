@@ -1906,9 +1906,9 @@ export class SourcesPanel extends UI.Panel.Panel implements
       condition: defaultCondition
     });
 
-    await currentDebuggerModel.agent.invoke_continueToLocation({
-      location: defaultBreakpointRequest2.location
-    });
+    const travelPointResponse = await currentDebuggerModel.agent.invoke_setBreakpoint(defaultBreakpointRequest2);
+
+    await currentDebuggerModel.agent.invoke_resume({terminateOnResume: false});
     const checkedTry1 = this.checkPaused();
     if(!checkedTry1.result) {
 
@@ -1923,6 +1923,8 @@ export class SourcesPanel extends UI.Panel.Panel implements
 
       return null;
     }
+
+    await currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: travelPointResponse.breakpointId});
 
     const current = checkedTry2.details.callFrames[0].payload.scopeChain[0];
     const parent = checkedTry2.details.callFrames[0].payload.scopeChain[1];
@@ -1968,15 +1970,13 @@ export class SourcesPanel extends UI.Panel.Panel implements
 
       return null;
     }
+    const conditionPartBreakpointResponse = await currentDebuggerModel.agent.invoke_setBreakpoint({
+      location: conditionPart,
+      condition: defaultCondition
+    });
 
     while(!isEnd && checked.result) {
-      await currentDebuggerModel.agent.invoke_continueToLocation({
-        location: {
-          scriptId: conditionPart.scriptId,
-          lineNumber: conditionPart.lineNumber,
-          columnNumber: conditionPart.columnNumber,
-        },
-      });
+      await currentDebuggerModel.agent.invoke_resume({terminateOnResume: false});
       const response = await currentDebuggerModel.agent.invoke_evaluateOnCallFrame({
         callFrameId,
         expression: counterName,
@@ -1990,6 +1990,8 @@ export class SourcesPanel extends UI.Panel.Panel implements
         checked.details.breakpointIds.includes(savePointResponse.breakpointId)
       ) {
         isEnd = true;
+
+        await currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: conditionPartBreakpointResponse.breakpointId});
 
         return {
           lastCounter: updatedCounters[updatedCounters.length - 1],
