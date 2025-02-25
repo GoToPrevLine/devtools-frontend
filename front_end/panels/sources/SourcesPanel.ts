@@ -1277,19 +1277,21 @@ export class SourcesPanel extends UI.Panel.Panel implements
         topCallFrame,
         callFrameId,
       });
+
       if (isEnteringTheLoop) {
         const test = await this.findLastCounterAfterLoopEnd({
           currentDebuggerModel,
-          defaultBreakpointRequest1,
           defaultBreakpointRequest2,
           defaultCondition,
           topCallFrame,
           callFrameId,
         });
+
         if (!test) {
 
           return true;
         }
+
         const condition = `${test.name} === ${test.lastCounter}`;
         const breakpointResponseLast = await currentDebuggerModel.agent.invoke_setBreakpoint({
           location: {
@@ -1299,6 +1301,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
           },
           condition
         });
+
         await currentDebuggerModel.agent.invoke_restartFrame({
           callFrameId,
           mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
@@ -1885,7 +1888,6 @@ export class SourcesPanel extends UI.Panel.Panel implements
     callFrameId,
   }: {
     currentDebuggerModel: SDK.DebuggerModel.DebuggerModel,
-    defaultBreakpointRequest1: Protocol.Debugger.SetBreakpointRequest,
     defaultBreakpointRequest2: Protocol.Debugger.SetBreakpointRequest,
     defaultCondition: string,
     topCallFrame: SDK.DebuggerModel.CallFrame,
