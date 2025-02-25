@@ -1334,6 +1334,30 @@ export class SourcesPanel extends UI.Panel.Panel implements
 
         return true;
       }
+
+      if (
+        enteredResponse.result &&
+        !this.calculateIsInLoopBoundary({
+          target: {
+            lineNumber: defaultBreakpointRequest1.location.lineNumber,
+            columnNumber: defaultBreakpointRequest1.location.columnNumber || 0,
+          },
+          loopBoundary: enteredResponse.fullLoopBoundary
+        })
+      ) {
+        const breakpointResponse = await currentDebuggerModel.agent.invoke_setBreakpoint(defaultBreakpointRequest1);
+
+        await currentDebuggerModel.agent.invoke_restartFrame({
+          callFrameId,
+          mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
+        });
+
+        await currentDebuggerModel.agent.invoke_resume({terminateOnResume: false});
+
+        await currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpointResponse.breakpointId});
+
+        return true;
+      }
     }
 
     const defaultBreakpointResponses = await this.setSeparatedBreakpoints({
