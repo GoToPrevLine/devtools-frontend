@@ -1312,14 +1312,14 @@ export class SourcesPanel extends UI.Panel.Panel implements
           return true;
         }
 
-        const condition = `${lastCounter.name} === ${lastCounter.value}`;
+        const lastCounterCondition = `${lastCounter.name} === ${lastCounter.value}`;
         const breakpointResponseLast = await currentDebuggerModel.agent.invoke_setBreakpoint({
           location: {
             scriptId: lastCounter.conditionPart.scriptId,
             lineNumber: lastCounter.conditionPart.lineNumber,
             columnNumber: lastCounter.conditionPart.columnNumber
           },
-          condition
+          condition: `${defaultCondition} && ${lastCounterCondition}`
         });
 
         await currentDebuggerModel.agent.invoke_restartFrame({
