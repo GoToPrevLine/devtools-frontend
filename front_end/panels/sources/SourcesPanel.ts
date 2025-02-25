@@ -1280,7 +1280,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
     }
 
     if (orderFromCallFrame > 2) {
-      const enteredResponse = await this.checkEntered({
+      const enteredResponse = await this.checkEnteredIntoLoop({
         currentDebuggerModel,
         defaultBreakpointRequest1,
         defaultBreakpointRequest2,
@@ -1299,7 +1299,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
           loopBoundary: enteredResponse.fullLoopBoundary
         })
       ) {
-        const test = await this.findLastCounterAfterLoopEnd({
+        const lastCounter = await this.findLastCounterAfterLoopEnd({
           currentDebuggerModel,
           defaultBreakpointRequest2,
           defaultCondition,
@@ -1307,17 +1307,17 @@ export class SourcesPanel extends UI.Panel.Panel implements
           callFrameId,
         });
 
-        if (!test) {
+        if (!lastCounter) {
 
           return true;
         }
 
-        const condition = `${test.name} === ${test.lastCounter}`;
+        const condition = `${lastCounter.name} === ${lastCounter.value}`;
         const breakpointResponseLast = await currentDebuggerModel.agent.invoke_setBreakpoint({
           location: {
-            scriptId: test.conditionPart.scriptId,
-            lineNumber: test.conditionPart.lineNumber,
-            columnNumber: test.conditionPart.columnNumber
+            scriptId: lastCounter.conditionPart.scriptId,
+            lineNumber: lastCounter.conditionPart.lineNumber,
+            columnNumber: lastCounter.conditionPart.columnNumber
           },
           condition
         });
@@ -1330,7 +1330,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
         await currentDebuggerModel.agent.invoke_resume({terminateOnResume: false});
 
         await currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpointResponseLast.breakpointId});
-        await currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: test.savePointResponse.breakpointId});
+        await currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: lastCounter.savePointResponse.breakpointId});
 
         return true;
       }
@@ -1840,7 +1840,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
     };
   }
 
-  async checkEntered({
+  async checkEnteredIntoLoop({
     currentDebuggerModel,
     defaultBreakpointRequest1,
     defaultBreakpointRequest2,
@@ -1951,7 +1951,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
     topCallFrame: SDK.DebuggerModel.CallFrame,
     callFrameId: Protocol.Debugger.CallFrameId,
   }): Promise<null|{
-    lastCounter: number,
+    value: number,
     conditionPart: Protocol.Debugger.BreakLocation,
     name: string,
     savePointResponse: Protocol.Debugger.SetBreakpointResponse,
@@ -2054,7 +2054,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
         await currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: conditionPartBreakpointResponse.breakpointId});
 
         return {
-          lastCounter: updatedCounters[updatedCounters.length - 1],
+          value: updatedCounters[updatedCounters.length - 1],
           conditionPart,
           name: counterName,
           savePointResponse
