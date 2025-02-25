@@ -1890,17 +1890,23 @@ export class SourcesPanel extends UI.Panel.Panel implements
     topCallFrame: SDK.DebuggerModel.CallFrame,
     callFrameId: Protocol.Debugger.CallFrameId,
   }) {
-    const savePointResponse = await currentDebuggerModel.agent.invoke_setBreakpoint({
-      location: topCallFrame.payload.location,
-      condition: defaultCondition
-    });
+    const checkedTry0 = this.checkPaused();
+    if(!checkedTry0.result) {
 
-    await currentDebuggerModel.agent.invoke_restartFrame({
+      return false;
+    }
+
+    await checkedTry0.debuggerModel.agent.invoke_restartFrame({
       callFrameId,
       mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
     });
 
-    await currentDebuggerModel.agent.invoke_continueToLocation({
+    const savePointResponse = await checkedTry0.debuggerModel.agent.invoke_setBreakpoint({
+      location: topCallFrame.payload.location,
+      condition: defaultCondition
+    });
+
+    await checkedTry0.debuggerModel.agent.invoke_continueToLocation({
       location: defaultBreakpointRequest2.location
     });
     const checkedTry1 = this.checkPaused();
@@ -1909,7 +1915,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
       return false;
     }
 
-    await currentDebuggerModel.agent.invoke_continueToLocation({
+    await checkedTry1.debuggerModel.agent.invoke_continueToLocation({
       location: defaultBreakpointRequest2.location
     });
     const checkedTry2 = this.checkPaused();
@@ -1949,7 +1955,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
     });
     const conditionPart = breakPointsInHeadRange[1];
 
-    const response = await currentDebuggerModel.runtimeModel().agent.invoke_getProperties({
+    const response = await checkedTry2.debuggerModel.runtimeModel().agent.invoke_getProperties({
       objectId: parent.object.objectId as Protocol.Runtime.RemoteObjectId,
       ownProperties: true
     });
@@ -1963,15 +1969,15 @@ export class SourcesPanel extends UI.Panel.Panel implements
       return false;
     }
 
-    while(!isEnd) {
-      await currentDebuggerModel.agent.invoke_continueToLocation({
+    while(!isEnd && checked.result) {
+      await checked.debuggerModel.agent.invoke_continueToLocation({
         location: {
           scriptId: conditionPart.scriptId,
           lineNumber: conditionPart.lineNumber,
           columnNumber: conditionPart.columnNumber,
         },
       });
-      const response = await currentDebuggerModel.agent.invoke_evaluateOnCallFrame({
+      const response = await checked.debuggerModel.agent.invoke_evaluateOnCallFrame({
         callFrameId,
         expression: counterName,
         returnByValue: true,
@@ -1979,7 +1985,10 @@ export class SourcesPanel extends UI.Panel.Panel implements
       
       checked = this.checkPaused();
 
-      if (!response.result) {
+      if (
+        checked.result && 
+        checked.details.breakpointIds.includes(savePointResponse.breakpointId)
+      ) {
         isEnd = true;
 
         return {
