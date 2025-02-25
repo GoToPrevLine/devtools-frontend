@@ -173,6 +173,17 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 const primitiveRemoteObjectTypes = new Set(['number', 'boolean', 'bigint', 'undefined']);
 let sourcesPanelInstance: SourcesPanel;
 
+interface FailedResultResponse {
+  result: false;
+}
+interface EnteredResponse {
+  result: true;
+  fullLoopBoundary: {
+    startLocation: Protocol.Debugger.Location,
+    endLocation: Protocol.Debugger.Location,
+  };
+}
+
 export class SourcesPanel extends UI.Panel.Panel implements
     UI.ContextMenu.Provider<Workspace.UISourceCode.UISourceCode|Workspace.UISourceCode.UILocation|
                             SDK.RemoteObject.RemoteObject|SDK.NetworkRequest.NetworkRequest|UISourceCodeFrame>,
@@ -1269,7 +1280,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
     }
 
     if (orderFromCallFrame > 2) {
-      const isEnteringTheLoop = await this.checkEntered({
+      const enteredResponse = await this.checkEntered({
         currentDebuggerModel,
         defaultBreakpointRequest1,
         defaultBreakpointRequest2,
@@ -1278,7 +1289,16 @@ export class SourcesPanel extends UI.Panel.Panel implements
         callFrameId,
       });
 
-      if (isEnteringTheLoop) {
+      if (
+        enteredResponse.result &&
+        this.calculateIsInLoopBoundary({
+          target: {
+            lineNumber: defaultBreakpointRequest1.location.lineNumber,
+            columnNumber: defaultBreakpointRequest1.location.columnNumber || 0,
+          },
+          loopBoundary: enteredResponse.fullLoopBoundary
+        })
+      ) {
         const test = await this.findLastCounterAfterLoopEnd({
           currentDebuggerModel,
           defaultBreakpointRequest2,
@@ -1810,7 +1830,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
     defaultCondition: string,
     topCallFrame: SDK.DebuggerModel.CallFrame,
     callFrameId: Protocol.Debugger.CallFrameId,
-  }): Promise<boolean> {
+  }): Promise<EnteredResponse|FailedResultResponse> {
     const savePointPrev = await currentDebuggerModel.agent.invoke_setBreakpoint({
       location: defaultBreakpointRequest1.location,
       condition: defaultCondition
@@ -1842,7 +1862,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
     if(!checkedTry1.result) {
       await clear();
 
-      return false;
+      return {result: false};
     }
 
     await currentDebuggerModel.agent.invoke_continueToLocation({
@@ -1852,32 +1872,46 @@ export class SourcesPanel extends UI.Panel.Panel implements
     if(!checkedTry2.result) {
       await clear();
 
-      return false;
+      return {result: false};
     }
 
     const current = checkedTry2.details.callFrames[0].payload.scopeChain[0];
     const parent = checkedTry2.details.callFrames[0].payload.scopeChain[1];
 
-    if (!parent) {
+    if (!parent || !parent.startLocation || !current.startLocation || !parent.endLocation || !current.endLocation) {
       await clear();
 
-      return false;
+      return {result: false};
     }
     if (current.type !== 'block' || parent.type !== 'block') {
       await clear();
 
-      return false;
+      return {result: false};
     }
 
     const isLoop = (
-      current.endLocation?.lineNumber === parent.endLocation?.lineNumber &&
-      current.endLocation?.columnNumber === parent.endLocation?.columnNumber &&
-      current.startLocation?.lineNumber === parent.startLocation?.lineNumber
+      current.endLocation.lineNumber === parent.endLocation.lineNumber &&
+      current.endLocation.columnNumber === parent.endLocation.columnNumber &&
+      current.startLocation.lineNumber === parent.startLocation.lineNumber
     );
+
+    if (!isLoop) {
+      await clear();
+
+      return {result: false};
+    }
+
+    const fullLoopBoundary = {
+      startLocation: parent.startLocation,
+      endLocation: parent.endLocation,
+    };
 
     await clear();
 
-    return isLoop;
+    return {
+      result: isLoop,
+      fullLoopBoundary,
+    };
   }
 
   async findLastCounterAfterLoopEnd({
@@ -2008,6 +2042,37 @@ export class SourcesPanel extends UI.Panel.Panel implements
     }
 
     return null;
+  }
+
+  calculateIsInLoopBoundary({
+    target,
+    loopBoundary,
+  }: {
+    target: {lineNumber: number, columnNumber: number},
+    loopBoundary: {startLocation: Protocol.Debugger.Location, endLocation: Protocol.Debugger.Location},
+  }): boolean{
+    if (
+      target.lineNumber < loopBoundary.startLocation.lineNumber ||
+      target.lineNumber > loopBoundary.endLocation.lineNumber
+    ) {
+      return false;
+    }
+
+    if (
+      target.lineNumber === loopBoundary.startLocation.lineNumber &&
+      target.columnNumber < Number(loopBoundary.startLocation.columnNumber)
+    ) {
+      return false;
+    }
+
+    if (
+      target.lineNumber === loopBoundary.endLocation.lineNumber &&
+      target.columnNumber > Number(loopBoundary.endLocation.columnNumber)
+    ) {
+      return false;
+    }
+
+    return true;
   }
 
   private async continueToLocation(uiLocation: Workspace.UISourceCode.UILocation): Promise<void> {
