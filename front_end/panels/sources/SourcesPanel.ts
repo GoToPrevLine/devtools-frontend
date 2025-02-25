@@ -1306,6 +1306,8 @@ export class SourcesPanel extends UI.Panel.Panel implements
     
         await currentDebuggerModel.agent.invoke_resume({terminateOnResume: false});
 
+        await currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpointResponseLast.breakpointId});
+        await currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: test.savePointResponse.breakpointId});
 
         return true;
       }
@@ -1989,6 +1991,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
           lastCounter: updatedCounters[updatedCounters.length - 1],
           conditionPart,
           name: counterName,
+          savePointResponse
         };
       }
 
