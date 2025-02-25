@@ -1277,6 +1277,38 @@ export class SourcesPanel extends UI.Panel.Panel implements
         topCallFrame,
         callFrameId,
       });
+      if (isEnteringTheLoop) {
+        const test = await this.findLastCounterAfterLoopEnd({
+          currentDebuggerModel,
+          defaultBreakpointRequest1,
+          defaultBreakpointRequest2,
+          defaultCondition,
+          topCallFrame,
+          callFrameId,
+        });
+        if (!test) {
+
+          return true;
+        }
+        const condition = `${test.name} === ${test.lastCounter}`;
+        const breakpointResponseLast = await currentDebuggerModel.agent.invoke_setBreakpoint({
+          location: {
+            scriptId: test.conditionPart.scriptId,
+            lineNumber: test.conditionPart.lineNumber,
+            columnNumber: test.conditionPart.columnNumber
+          },
+          condition
+        });
+        await currentDebuggerModel.agent.invoke_restartFrame({
+          callFrameId,
+          mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
+        });
+    
+        await currentDebuggerModel.agent.invoke_resume({terminateOnResume: false});
+
+
+        return true;
+      }
     }
 
     const defaultBreakpointResponses = await this.setSeparatedBreakpoints({
@@ -1841,6 +1873,127 @@ export class SourcesPanel extends UI.Panel.Panel implements
     clear();
 
     return isLoop;
+  }
+
+  async findLastCounterAfterLoopEnd({
+    currentDebuggerModel,
+    defaultBreakpointRequest1,
+    defaultBreakpointRequest2,
+    defaultCondition,
+    topCallFrame,
+    callFrameId,
+  }: {
+    currentDebuggerModel: SDK.DebuggerModel.DebuggerModel,
+    defaultBreakpointRequest1: Protocol.Debugger.SetBreakpointRequest,
+    defaultBreakpointRequest2: Protocol.Debugger.SetBreakpointRequest,
+    defaultCondition: string,
+    topCallFrame: SDK.DebuggerModel.CallFrame,
+    callFrameId: Protocol.Debugger.CallFrameId,
+  }) {
+    const savePointResponse = await currentDebuggerModel.agent.invoke_setBreakpoint({
+      location: topCallFrame.payload.location,
+      condition: defaultCondition
+    });
+
+    await currentDebuggerModel.agent.invoke_restartFrame({
+      callFrameId,
+      mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
+    });
+
+    await currentDebuggerModel.agent.invoke_continueToLocation({
+      location: defaultBreakpointRequest2.location
+    });
+    const checkedTry1 = this.checkPaused();
+    if(!checkedTry1.result) {
+
+      return false;
+    }
+
+    await currentDebuggerModel.agent.invoke_continueToLocation({
+      location: defaultBreakpointRequest2.location
+    });
+    const checkedTry2 = this.checkPaused();
+    if(!checkedTry2.result) {
+
+      return false;
+    }
+
+    const current = checkedTry2.details.callFrames[0].payload.scopeChain[0];
+    const parent = checkedTry2.details.callFrames[0].payload.scopeChain[1];
+
+    if (!parent) {
+
+      return false;
+    }
+    if (current.type !== 'block' || parent.type !== 'block') {
+
+      return false;
+    }
+
+    const headRange = {
+      startLocation: {
+        scriptId: parent.startLocation!.scriptId,
+        lineNumber: parent.startLocation!.lineNumber,
+        columnNumber: parent.startLocation!.columnNumber,
+      },
+      endLocation: {
+        scriptId: current.startLocation!.scriptId,
+        lineNumber: current.startLocation!.lineNumber,
+        columnNumber: current.startLocation!.columnNumber,
+      }
+    };
+    const breakPointsInHeadRange = await this.getBreakPointsInBlockScope({
+      currentDebuggerModel,
+      blockScopeStart: headRange.startLocation,
+      blockScopeEnd: headRange.endLocation
+    });
+    const conditionPart = breakPointsInHeadRange[1];
+
+    const response = await currentDebuggerModel.runtimeModel().agent.invoke_getProperties({
+      objectId: parent.object.objectId as Protocol.Runtime.RemoteObjectId,
+      ownProperties: true
+    });
+    const counterName = response.result[0].name;
+    const updatedCounters = [];
+
+    let isEnd = false;
+    let checked = this.checkPaused();
+    if (!checked.result) {
+
+      return false;
+    }
+
+    while(!isEnd) {
+      await currentDebuggerModel.agent.invoke_continueToLocation({
+        location: {
+          scriptId: conditionPart.scriptId,
+          lineNumber: conditionPart.lineNumber,
+          columnNumber: conditionPart.columnNumber,
+        },
+      });
+      const response = await currentDebuggerModel.agent.invoke_evaluateOnCallFrame({
+        callFrameId,
+        expression: counterName,
+        returnByValue: true,
+      });
+      
+      checked = this.checkPaused();
+
+      if (!response.result) {
+        isEnd = true;
+
+        return {
+          lastCounter: updatedCounters[updatedCounters.length - 1],
+          conditionPart,
+          name: counterName,
+        };
+      }
+
+      const updated = response.result.value;
+      updatedCounters.push(updated);
+    }
+    
+    return false;
   }
 
   private async continueToLocation(uiLocation: Workspace.UISourceCode.UILocation): Promise<void> {
