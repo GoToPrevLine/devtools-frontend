@@ -1303,7 +1303,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
           callFrameId,
           mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
         });
-    
+
         await currentDebuggerModel.agent.invoke_resume({terminateOnResume: false});
 
         await currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: breakpointResponseLast.breakpointId});
@@ -1817,7 +1817,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
       condition: defaultCondition
     });
 
-    async function clear() {
+    async function clear(): Promise<void> {
       await currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: savePointPrev.breakpointId});
       await currentDebuggerModel.agent.invoke_removeBreakpoint({breakpointId: savePoint.breakpointId});
 
@@ -1837,7 +1837,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
     });
     const checkedTry1 = this.checkPaused();
     if(!checkedTry1.result) {
-      clear();
+      await clear();
 
       return false;
     }
@@ -1847,7 +1847,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
     });
     const checkedTry2 = this.checkPaused();
     if(!checkedTry2.result) {
-      clear();
+      await clear();
 
       return false;
     }
@@ -1856,12 +1856,12 @@ export class SourcesPanel extends UI.Panel.Panel implements
     const parent = checkedTry2.details.callFrames[0].payload.scopeChain[1];
 
     if (!parent) {
-      clear();
+      await clear();
 
       return false;
     }
     if (current.type !== 'block' || parent.type !== 'block') {
-      clear();
+      await clear();
 
       return false;
     }
@@ -1870,16 +1870,15 @@ export class SourcesPanel extends UI.Panel.Panel implements
       current.endLocation?.lineNumber === parent.endLocation?.lineNumber &&
       current.endLocation?.columnNumber === parent.endLocation?.columnNumber &&
       current.startLocation?.lineNumber === parent.startLocation?.lineNumber
-    )
+    );
 
-    clear();
+    await clear();
 
     return isLoop;
   }
 
   async findLastCounterAfterLoopEnd({
     currentDebuggerModel,
-    defaultBreakpointRequest1,
     defaultBreakpointRequest2,
     defaultCondition,
     topCallFrame,
@@ -1891,7 +1890,12 @@ export class SourcesPanel extends UI.Panel.Panel implements
     defaultCondition: string,
     topCallFrame: SDK.DebuggerModel.CallFrame,
     callFrameId: Protocol.Debugger.CallFrameId,
-  }) {
+  }): Promise<null|{
+    lastCounter: number,
+    conditionPart: Protocol.Debugger.BreakLocation,
+    name: string,
+    savePointResponse: Protocol.Debugger.SetBreakpointResponse,
+  }> {
     await currentDebuggerModel.agent.invoke_restartFrame({
       callFrameId,
       mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
@@ -1908,7 +1912,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
     const checkedTry1 = this.checkPaused();
     if(!checkedTry1.result) {
 
-      return false;
+      return null;
     }
 
     await currentDebuggerModel.agent.invoke_continueToLocation({
@@ -1917,31 +1921,31 @@ export class SourcesPanel extends UI.Panel.Panel implements
     const checkedTry2 = this.checkPaused();
     if(!checkedTry2.result) {
 
-      return false;
+      return null;
     }
 
     const current = checkedTry2.details.callFrames[0].payload.scopeChain[0];
     const parent = checkedTry2.details.callFrames[0].payload.scopeChain[1];
 
-    if (!parent) {
+    if (!parent || !parent.startLocation || !current.startLocation) {
 
-      return false;
+      return null;
     }
     if (current.type !== 'block' || parent.type !== 'block') {
 
-      return false;
+      return null;
     }
 
     const headRange = {
       startLocation: {
-        scriptId: parent.startLocation!.scriptId,
-        lineNumber: parent.startLocation!.lineNumber,
-        columnNumber: parent.startLocation!.columnNumber,
+        scriptId: parent.startLocation.scriptId,
+        lineNumber: parent.startLocation.lineNumber,
+        columnNumber: parent.startLocation.columnNumber,
       },
       endLocation: {
-        scriptId: current.startLocation!.scriptId,
-        lineNumber: current.startLocation!.lineNumber,
-        columnNumber: current.startLocation!.columnNumber,
+        scriptId: current.startLocation.scriptId,
+        lineNumber: current.startLocation.lineNumber,
+        columnNumber: current.startLocation.columnNumber,
       }
     };
     const breakPointsInHeadRange = await this.getBreakPointsInBlockScope({
@@ -1962,7 +1966,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
     let checked = this.checkPaused();
     if (!checked.result) {
 
-      return false;
+      return null;
     }
 
     while(!isEnd && checked.result) {
@@ -1978,11 +1982,11 @@ export class SourcesPanel extends UI.Panel.Panel implements
         expression: counterName,
         returnByValue: true,
       });
-      
+
       checked = this.checkPaused();
 
       if (
-        checked.result && 
+        checked.result &&
         checked.details.breakpointIds.includes(savePointResponse.breakpointId)
       ) {
         isEnd = true;
@@ -1998,8 +2002,8 @@ export class SourcesPanel extends UI.Panel.Panel implements
       const updated = response.result.value;
       updatedCounters.push(updated);
     }
-    
-    return false;
+
+    return null;
   }
 
   private async continueToLocation(uiLocation: Workspace.UISourceCode.UILocation): Promise<void> {
