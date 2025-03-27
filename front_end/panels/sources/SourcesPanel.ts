@@ -968,7 +968,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
       condition: defaultCondition,
     };
 
-    let orderFromCurrnetBlockScope: number | null = null;
+    let orderFromCurrnetBlockScope: number|null = null;
 
     if (currentBlockScope) {
       const {
@@ -991,7 +991,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
           breakPointsInCurrentScope: breakPointsInCurrentBlockScope
         });
 
-        orderFromCurrnetBlockScope = order >= 0 ? order : null ;
+        orderFromCurrnetBlockScope = order >= 0 ? order : null;
 
         const checkedIsInForLoopHead = await this.checkInForLoopHead({
           topCallFrame,
@@ -1115,7 +1115,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
     if (
       currentBlockScope &&
       parentBlockScope &&
-      orderFromCurrnetBlockScope!==null &&
+      orderFromCurrnetBlockScope !== null &&
       (orderFromCurrnetBlockScope === 1 || orderFromCurrnetBlockScope === 0)
     ) {
       const {
@@ -1126,7 +1126,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
         startLocation: currentBlockScopeStart,
         endLocation: currentBlockScopeEnd,
       } = currentBlockScope;
-      let breakPointsInHeadRange:Protocol.Debugger.BreakLocation[] = [];
+      let breakPointsInHeadRange: Protocol.Debugger.BreakLocation[] = [];
 
       if (
         parentBlockScopeStart &&
@@ -1228,11 +1228,11 @@ export class SourcesPanel extends UI.Panel.Panel implements
 
     if (
       parentBlockScope &&
-      orderFromCurrnetBlockScope!==null &&
+      orderFromCurrnetBlockScope !== null &&
       orderFromCurrnetBlockScope > 1
     ) {
       const {object: {
-        objectId : parentScopeObjectId
+        objectId: parentScopeObjectId
       }} = parentBlockScope;
 
       if (parentScopeObjectId) {
@@ -1308,7 +1308,6 @@ export class SourcesPanel extends UI.Panel.Panel implements
         });
 
         if (!lastCounter) {
-
           return true;
         }
 
@@ -1391,7 +1390,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
   getPausedLineAndColumnAfterRestart(): {
     lineNumber: number,
     columnNumber: number,
-  } | null {
+  }|null {
     const target = UI.Context.Context.instance().flavor(SDK.Target.Target);
 
     if (!target) {
@@ -1416,14 +1415,14 @@ export class SourcesPanel extends UI.Panel.Panel implements
     currentLineNumber,
     currentColumnNumber,
     breakPointsInCurrentScope,
-  }:{
+  }: {
     currentLineNumber: number,
     currentColumnNumber: number,
     breakPointsInCurrentScope: Protocol.Debugger.BreakLocation[],
-  }) : number {
-    const orderFromCurrnetScope =  breakPointsInCurrentScope.findIndex(breakPoint => {
+  }): number {
+    const orderFromCurrnetScope = breakPointsInCurrentScope.findIndex(breakPoint => {
       const isInScope = (
-        breakPoint.lineNumber  === currentLineNumber &&
+        breakPoint.lineNumber === currentLineNumber &&
         breakPoint.columnNumber === currentColumnNumber
       );
       return isInScope;
@@ -1436,11 +1435,11 @@ export class SourcesPanel extends UI.Panel.Panel implements
     currentDebuggerModel,
     blockScopeStart,
     blockScopeEnd
-  } : {
+  }: {
     currentDebuggerModel: SDK.DebuggerModel.DebuggerModel,
     blockScopeStart: Protocol.Debugger.Location,
     blockScopeEnd: Protocol.Debugger.Location,
-}) : Promise<Protocol.Debugger.BreakLocation[]> {
+  }): Promise<Protocol.Debugger.BreakLocation[]> {
     const {locations: breakPointsInCurrentBlockScope} = await currentDebuggerModel.agent.invoke_getPossibleBreakpoints({
       start: {
         scriptId: blockScopeStart.scriptId,
@@ -1461,7 +1460,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
     callFrames,
     runtimeModel,
     runningFunctionName,
-  }:{
+  }: {
     callFrames: SDK.DebuggerModel.CallFrame[],
     runtimeModel: SDK.RuntimeModel.RuntimeModel,
     runningFunctionName: string,
@@ -1472,7 +1471,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
     }
 
     const upperScopeObjectId = upperCallFrame.payload.scopeChain[0].object.objectId;
-    if(!upperScopeObjectId) {
+    if (!upperScopeObjectId) {
       return null;
     }
 
@@ -1502,7 +1501,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
     debuggerModel,
     lineNumberOfFunctionLocation,
     callFrames
-  } : {
+  }: {
     startingPoint: number,
     possibleBreakpointsInCallFrame: Protocol.Debugger.BreakLocation[],
     callFrameId: Protocol.Debugger.CallFrameId,
@@ -1510,7 +1509,10 @@ export class SourcesPanel extends UI.Panel.Panel implements
     debuggerModel: SDK.DebuggerModel.DebuggerModel,
     lineNumberOfFunctionLocation: number,
     callFrames: SDK.DebuggerModel.CallFrame[],
-  }): Promise<{reachableIndexInCallFrame: number, reachableBreackpointInCallFrame: {lineNumber: number, columnNumber: number}}> {
+  }): Promise<{
+    reachableIndexInCallFrame: number,
+    reachableBreackpointInCallFrame: {lineNumber: number, columnNumber: number},
+  }> {
     let reachable = false;
     let reachableIndexInCallFrame = startingPoint - 1;
     let reachableBreackpointInCallFrame = {
@@ -1533,7 +1535,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
       if (!funcSource) {
         const funcSourceDefinedInScriptResponse = await debuggerModel.agent.invoke_evaluateOnCallFrame({
           callFrameId,
-          expression:`${callFrameFunctionName}.toString()`,
+          expression: `${callFrameFunctionName}.toString()`,
           returnByValue: true,
         });
         funcSource = funcSourceDefinedInScriptResponse.result.value;
@@ -1574,12 +1576,12 @@ export class SourcesPanel extends UI.Panel.Panel implements
     callFrameId,
     breakpoint1Response,
     breakpoint2Response
-  }:{
+  }: {
     debuggerModel: SDK.DebuggerModel.DebuggerModel,
     callFrameId: Protocol.Debugger.CallFrameId,
     breakpoint1Response: Protocol.Debugger.SetBreakpointResponse,
     breakpoint2Response: Protocol.Debugger.SetBreakpointResponse,
-  }) :Promise<void> {
+  }): Promise<void> {
     await debuggerModel.agent.invoke_restartFrame({
       callFrameId,
       mode: Protocol.Debugger.RestartFrameRequestMode.StepInto
@@ -1592,7 +1594,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
       pausedLineAndColumn !== null &&
       ((pausedLineAndColumn.lineNumber < breakpoint2Response.actualLocation.lineNumber) || ( pausedLineAndColumn.lineNumber === breakpoint2Response.actualLocation.lineNumber && pausedLineAndColumn.columnNumber < (breakpoint2Response.actualLocation.columnNumber || 0)));
       pausedLineAndColumn = this.getPausedLineAndColumnAfterRestart()
-    ){
+    ) {
       await debuggerModel.agent.invoke_resume({terminateOnResume: false});
     }
 
@@ -1603,7 +1605,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
   async makeDefaultCondition({
     debuggerModel,
     callFrameId,
-  }:{
+  }: {
     debuggerModel: SDK.DebuggerModel.DebuggerModel,
     callFrameId: Protocol.Debugger.CallFrameId,
   }): Promise<string> {
@@ -1639,7 +1641,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
 
     const parts: Protocol.Debugger.BreakLocation[] = [];
 
-    for (let i = 0 ; i < 3 ; i += 1) {
+    for (let i = 0; i < 3; i += 1) {
       if (breakPointsInCurrentBlockScope[i]) {
         parts.push(breakPointsInCurrentBlockScope[i]);
       }
@@ -1668,9 +1670,9 @@ export class SourcesPanel extends UI.Panel.Panel implements
       return {result: false};
     }
 
-    const currentPartIndex =  parts.findIndex(part => part.lineNumber === currentLineNumber && part.columnNumber === currentColumnNumber);
+    const currentPartIndex = parts.findIndex(part => part.lineNumber === currentLineNumber && part.columnNumber === currentColumnNumber);
 
-    if (currentPartIndex === -1){
+    if (currentPartIndex === -1) {
       return {result: false};
     }
 
@@ -1685,14 +1687,14 @@ export class SourcesPanel extends UI.Panel.Panel implements
     breakpointRequest1,
     breakpointRequest2,
     debuggerModel,
-  }:{
+  }: {
     breakpointRequest1: Protocol.Debugger.SetBreakpointRequest,
     breakpointRequest2: Protocol.Debugger.SetBreakpointRequest,
     debuggerModel: SDK.DebuggerModel.DebuggerModel,
-  }):Promise<{
+  }): Promise<{
     breakpointResponse1: Protocol.Debugger.SetBreakpointResponse,
     breakpointResponse2: Protocol.Debugger.SetBreakpointResponse,
-   }> {
+  }> {
     const breakpointResponse1 = await debuggerModel.agent.invoke_setBreakpoint(breakpointRequest1);
     const breakpointResponse2 = await debuggerModel.agent.invoke_setBreakpoint(breakpointRequest2);
 
@@ -1883,7 +1885,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
       location: defaultBreakpointRequest2.location
     });
     const checkedTry1 = this.checkPaused();
-    if(!checkedTry1.result) {
+    if (!checkedTry1.result) {
       await clear();
 
       return {result: false};
@@ -1893,7 +1895,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
       location: defaultBreakpointRequest2.location
     });
     const checkedTry2 = this.checkPaused();
-    if(!checkedTry2.result) {
+    if (!checkedTry2.result) {
       await clear();
 
       return {result: false};
@@ -1970,8 +1972,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
 
     await currentDebuggerModel.agent.invoke_resume({terminateOnResume: false});
     const checkedTry1 = this.checkPaused();
-    if(!checkedTry1.result) {
-
+    if (!checkedTry1.result) {
       return null;
     }
 
@@ -1979,8 +1980,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
       location: defaultBreakpointRequest2.location
     });
     const checkedTry2 = this.checkPaused();
-    if(!checkedTry2.result) {
-
+    if (!checkedTry2.result) {
       return null;
     }
 
@@ -1990,11 +1990,9 @@ export class SourcesPanel extends UI.Panel.Panel implements
     const parent = checkedTry2.details.callFrames[0].payload.scopeChain[1];
 
     if (!parent || !parent.startLocation || !current.startLocation) {
-
       return null;
     }
     if (current.type !== 'block' || parent.type !== 'block') {
-
       return null;
     }
 
@@ -2027,7 +2025,6 @@ export class SourcesPanel extends UI.Panel.Panel implements
     let isEnd = false;
     let checked = this.checkPaused();
     if (!checked.result) {
-
       return null;
     }
     const conditionPartBreakpointResponse = await currentDebuggerModel.agent.invoke_setBreakpoint({
@@ -2035,7 +2032,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
       condition: defaultCondition
     });
 
-    while(!isEnd && checked.result) {
+    while (!isEnd && checked.result) {
       await currentDebuggerModel.agent.invoke_resume({terminateOnResume: false});
       const response = await currentDebuggerModel.agent.invoke_evaluateOnCallFrame({
         callFrameId,
@@ -2074,7 +2071,7 @@ export class SourcesPanel extends UI.Panel.Panel implements
   }: {
     target: {lineNumber: number, columnNumber: number},
     loopBoundary: {startLocation: Protocol.Debugger.Location, endLocation: Protocol.Debugger.Location},
-  }): boolean{
+  }): boolean {
     if (
       target.lineNumber < loopBoundary.startLocation.lineNumber ||
       target.lineNumber > loopBoundary.endLocation.lineNumber
